@@ -62,7 +62,7 @@ RegistrarVista('votante', {
         <div class="card-desc">Documentos que rigen el proceso electoral</div></div>
         <div class="card-body" style="padding-top:14px">
           ${DB.normativas.map(n => `
-            <div class="flex items-center gap-14" style="padding:11px 0;border-bottom:1px solid hsl(var(--border))">
+            <div class="fila">
               <div class="fi-icon" style="background:hsl(var(--destructive) / .12);color:hsl(var(--destructive));width:36px;height:36px;border-radius:9px;display:grid;place-items:center;font-size:10px;font-weight:800">PDF</div>
               <div style="flex:1;min-width:0">
                 <div class="fw-600" style="font-size:13.5px">${esc(n.titulo)}</div>

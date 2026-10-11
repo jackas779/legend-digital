@@ -111,19 +111,19 @@ RegistrarVista('auditor/logs', {
           <button class="btn btn-outline" id="log-exportar">${Icons.download(15)} Exportar CSV</button>
         </div>
         <div style="padding:0 22px 22px">
-          <div class="table-wrap">
+          <div class="table-wrap stack">
             <table class="table">
               <thead><tr><th>#</th><th>Timestamp</th><th>Usuario</th><th>Módulo</th><th>Acción</th><th>IP</th><th>Hash</th></tr></thead>
               <tbody>
                 ${DB.logs.map(l => `
                   <tr>
-                    <td class="text-muted">${l.id}</td>
-                    <td class="font-mono" style="font-size:11.5px">${esc(l.ts)}</td>
-                    <td>${esc(l.usuario)}</td>
-                    <td>${esc(l.modulo)}</td>
-                    <td class="fw-600">${esc(l.accion)}</td>
-                    <td class="font-mono" style="font-size:11.5px">${esc(l.ip)}</td>
-                    <td class="font-mono" style="font-size:11.5px;color:hsl(var(--muted-foreground))">${esc(l.hash)}</td>
+                    <td data-th="#" class="text-muted">${l.id}</td>
+                    <td data-th="Timestamp" class="font-mono" style="font-size:11.5px">${esc(l.ts)}</td>
+                    <td data-th="Usuario">${esc(l.usuario)}</td>
+                    <td data-th="Módulo">${esc(l.modulo)}</td>
+                    <td data-th="Acción" class="fw-600">${esc(l.accion)}</td>
+                    <td data-th="IP" class="font-mono" style="font-size:11.5px">${esc(l.ip)}</td>
+                    <td data-th="Hash" class="font-mono" style="font-size:11.5px;color:hsl(var(--muted-foreground))">${esc(l.hash)}</td>
                   </tr>`).join('')}
               </tbody>
             </table>

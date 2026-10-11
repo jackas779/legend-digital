@@ -31,11 +31,11 @@ RegistrarVista('org', {
           <div class="card-header"><div class="card-title">${Icons.calendar(16)} Cronograma</div>
           <div class="card-desc">Fechas de apertura y cierre programadas</div></div>
           <div class="card-body">
-            <div class="flex justify-between items-center mb-16">
+            <div class="fila">
               <div><div class="fw-600" style="font-size:13.5px">Apertura</div><div class="text-sm text-muted">${fmtFecha(c.apertura)} · 07:00</div></div>
               <span class="badge badge-success">${Icons.check(12)} Cumplida</span>
             </div>
-            <div class="flex justify-between items-center">
+            <div class="fila">
               <div><div class="fw-600" style="font-size:13.5px">Cierre</div><div class="text-sm text-muted">${fmtFecha(c.cierre)} · 20:00</div></div>
               <span class="badge badge-info">Pendiente</span>
             </div>
@@ -54,8 +54,8 @@ RegistrarVista('org', {
               { t: 'Estandarizar fotos de la Lista 4', ok: false },
               { t: 'Configurar resultados en vivo', ok: !c.enVivo },
             ].map(p => `
-              <div class="flex items-center gap-10" style="padding:8px 0;border-bottom:1px solid hsl(var(--border))">
-                <span style="color:${p.ok ? 'hsl(var(--success))' : 'hsl(var(--warning))'}">${p.ok ? Icons.check(16) : Icons.clock(16)}</span>
+              <div class="fila">
+                <span style="color:${p.ok ? 'hsl(var(--success))' : 'hsl(var(--warning))'};flex-shrink:0">${p.ok ? Icons.check(16) : Icons.clock(16)}</span>
                 <span style="flex:1;font-size:13.5px;${p.ok ? 'text-decoration:line-through;color:hsl(var(--muted-foreground))' : ''}">${p.t}</span>
                 ${p.ok ? '' : '<span class="badge badge-warning">Pendiente</span>'}
               </div>`).join('')}
@@ -106,7 +106,7 @@ RegistrarVista('org/categorias', {
           <div class="card-desc">Todas las elecciones y sus estados actuales</div></div>
           <div class="card-body" style="padding:0 22px 22px">
             ${DB.categorias.map(cat => `
-              <div class="flex items-center gap-14" style="padding:14px 0;border-bottom:1px solid hsl(var(--border))">
+              <div class="fila">
                 <div style="flex:1;min-width:0">
                   <div class="fw-600" style="font-size:14px">${esc(cat.titulo)}</div>
                   <div class="text-sm text-muted">${fmtFecha(cat.apertura)} → ${fmtFecha(cat.cierre)}</div>

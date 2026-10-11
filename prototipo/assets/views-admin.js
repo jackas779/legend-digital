@@ -22,7 +22,7 @@ RegistrarVista('admin', {
           <div class="card-desc">Últimos eventos registrados en la bitácora de auditoría</div></div>
           <div class="card-body" style="padding-top:14px">
             ${DB.logs.slice(0, 5).map(l => `
-              <div class="flex items-center gap-10" style="padding:9px 0;border-bottom:1px solid hsl(var(--border))">
+              <div class="fila">
                 <div style="width:8px;height:8px;border-radius:50%;background:hsl(var(--primary));flex-shrink:0"></div>
                 <div style="flex:1;min-width:0">
                   <div style="font-size:13px;font-weight:600">${esc(l.accion)}</div>
@@ -38,15 +38,15 @@ RegistrarVista('admin', {
           <div class="card-header"><div class="card-title">${Icons.key(16)} Estado de seguridad</div>
           <div class="card-desc">Indicadores del módulo de autenticación</div></div>
           <div class="card-body">
-            <div class="flex justify-between items-center mb-16">
+            <div class="fila">
               <div><div class="fw-600" style="font-size:13.5px">Sesiones JWT activas</div><div class="text-sm text-muted">Access token 60 min · Refresh rotativo</div></div>
               <span class="badge badge-success">7 activas</span>
             </div>
-            <div class="flex justify-between items-center mb-16">
+            <div class="fila">
               <div><div class="fw-600" style="font-size:13.5px">Intentos fallidos (24 h)</div><div class="text-sm text-muted">Bloqueo automático a los 5 intentos</div></div>
               <span class="badge badge-warning">3 eventos</span>
             </div>
-            <div class="flex justify-between items-center">
+            <div class="fila">
               <div><div class="fw-600" style="font-size:13.5px">Consistencia de la urna</div><div class="text-sm text-muted">Padrón = votos + abstenciones</div></div>
               <span class="badge badge-success">${Icons.check(12)} OK</span>
             </div>
@@ -83,7 +83,7 @@ RegistrarVista('admin/usuarios', {
           <button class="btn btn-primary" id="u-nuevo">${Icons.plus(16)} Nuevo usuario</button>
         </div>
         <div style="padding:0 22px 22px">
-          <div class="table-wrap" id="u-tabla"></div>
+          <div class="table-wrap stack" id="u-tabla"></div>
           <div class="text-sm text-muted" style="margin-top:12px" id="u-conteo"></div>
         </div>
       </div>`,
@@ -102,18 +102,18 @@ RegistrarVista('admin/usuarios', {
               <tbody>
                 ${rows.map(u => `
                   <tr>
-                    <td class="font-mono">${esc(u.documento)}</td>
-                    <td>
+                    <td data-th="Documento" class="font-mono">${esc(u.documento)}</td>
+                    <td data-th="Usuario">
                       <div class="flex items-center gap-10">
                         ${avatar(u.nombres + ' ' + u.apellidos, 32)}
                         <div><div class="fw-600">${esc(u.nombres)} ${esc(u.apellidos)}</div>
                         <div class="text-sm text-muted">${esc(u.correo)}</div></div>
                       </div>
                     </td>
-                    <td><span class="badge badge-secondary">${esc(u.rol)}</span></td>
-                    <td>${badgeUsuario(u.estado)}</td>
-                    <td class="text-muted">${u.intentos}/5</td>
-                    <td>
+                    <td data-th="Rol"><span class="badge badge-secondary">${esc(u.rol)}</span></td>
+                    <td data-th="Estado">${badgeUsuario(u.estado)}</td>
+                    <td data-th="Intentos" class="text-muted">${u.intentos}/5</td>
+                    <td data-th="Acciones">
                       <div class="actions">
                         <button class="btn btn-ghost btn-sm btn-icon" data-edit="${u.id}" title="Editar">${Icons.edit(15)}</button>
                         <button class="btn btn-ghost btn-sm btn-icon" data-susp="${u.id}" title="${u.estado === 'SUSPENDIDO' ? 'Reactivar' : 'Suspender'}">${Icons.lock(15)}</button>

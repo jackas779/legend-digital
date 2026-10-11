@@ -675,8 +675,14 @@ body { overflow-x: hidden; }
 /* ============ Responsive: móvil pequeño ============ */
 @media (max-width: 480px) {
   .content { padding: 12px; }
-  .kpi-grid { grid-template-columns: 1fr; }
-  .kpi .kpi-value { font-size: 21px; }
+  .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .kpi { padding: 12px 14px; }
+  .kpi .kpi-label { font-size: 11.5px; gap: 5px; }
+  .kpi .kpi-value { font-size: 19px; margin-top: 5px; }
+  .kpi .kpi-trend { font-size: 11px; margin-top: 3px; }
+  .card-footer { flex-direction: column-reverse; }
+  .card-footer .btn { width: 100%; }
+  .sim-wrap .sim-label { display: inline; font-size: 11px; }
   .section-title { font-size: 16px; }
   .login-right { padding: 20px; }
   .login-card h3 { font-size: 21px; }
@@ -685,6 +691,41 @@ body { overflow-x: hidden; }
   .bar-row { grid-template-columns: 84px 1fr 38px; font-size: 11.5px; }
   .hash-box { font-size: 10.5px; padding: 10px 12px; }
   .btn-lg { height: 42px; font-size: 14px; }
-  .table thead th, .table tbody td { padding: 10px 12px; }
   .file-item { flex-wrap: wrap; }
 }
+
+/* ============ Tablas como tarjetas en móvil ============ */
+@media (max-width: 820px) {
+  .table-wrap.stack { border: none; background: transparent; overflow: visible; }
+  .table-wrap.stack table.table { display: block; }
+  .table-wrap.stack thead { display: none; }
+  .table-wrap.stack tbody { display: block; }
+  .table-wrap.stack tbody tr {
+    display: block; border: 1px solid hsl(var(--border)); border-radius: 12px;
+    margin-bottom: 10px; padding: 4px 14px; background: hsl(var(--card));
+  }
+  .table-wrap.stack tbody tr:last-child { margin-bottom: 0; }
+  .table-wrap.stack tbody td {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    border: none; padding: 9px 0; white-space: normal; text-align: right;
+  }
+  .table-wrap.stack tbody td + td { border-top: 1px solid hsl(var(--border)); }
+  .table-wrap.stack tbody td::before {
+    content: attr(data-th); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em;
+    color: hsl(var(--muted-foreground)); flex-shrink: 0; text-align: left;
+  }
+  .table-wrap.stack .actions { justify-content: flex-end; }
+}
+
+/* Renglones de información con píldoras */
+.fila {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 12px 0; flex-wrap: wrap;
+  border-bottom: 1px solid hsl(var(--border));
+}
+.fila:last-child { border-bottom: none; }
+
+/* Voto en blanco a todo el ancho en la vista previa */
+.tarjeton-preview .tarjeton-option.blanco { grid-column: 1 / -1; flex-direction: row; gap: 14px; text-align: left; }
+.tarjeton-preview .tarjeton-option.blanco .foto { margin: 0; width: 46px; height: 46px; }
