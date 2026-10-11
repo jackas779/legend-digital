@@ -5,9 +5,9 @@ const editable = () => ['BORRADOR', 'PROGRAMADA'].includes(State.estadoEleccion)
 
 function bannerBloqueo() {
   if (editable()) return '';
-  return `<div class="locked-banner">${Icons.lock(16)}
-    La elección está <b>&nbsp;${ESTADOS[State.estadoEleccion].label.toUpperCase()}&nbsp;</b>.
-    Los formularios de configuración están bloqueados (solo lectura). Vuelve a <b>Borrador/Programada</b> con el simulador del panel superior para editar.
+  return `<div class="locked-banner">
+    <span style="flex-shrink:0">${Icons.lock(16)}</span>
+    <span>La elección está en estado <b>${ESTADOS[State.estadoEleccion].label.toUpperCase()}</b>: los formularios de configuración están bloqueados (solo lectura). Vuelve a <b>Borrador</b> o <b>Programada</b> con el simulador del panel superior para editar.</span>
   </div>`;
 }
 
@@ -307,7 +307,7 @@ RegistrarVista('org/tarjeton', {
                   ${cand.esBlanco ? '<span class="badge badge-muted">Obligatoria</span>' : ''}
                 </div>`).join('')}
             </div>
-            <div class="flex gap-10" style="margin-top:16px">
+            <div class="flex gap-10" style="margin-top:16px;flex-wrap:wrap">
               <button class="btn btn-primary" ${bloqueado ? 'disabled' : ''} id="t-guardar">${Icons.check(16)} Guardar orden</button>
               <button class="btn btn-outline" ${bloqueado ? 'disabled' : ''}>${Icons.plus(15)} Agregar candidato</button>
             </div>
@@ -318,7 +318,7 @@ RegistrarVista('org/tarjeton', {
           <div class="card-header"><div class="card-title">${Icons.checkSquare(16)} Vista previa del tarjetón</div>
           <div class="card-desc">Así lo verá el votante</div></div>
           <div class="card-body">
-            <div class="tarjeton-grid" style="grid-template-columns:1fr 1fr">
+            <div class="tarjeton-grid tarjeton-preview">
               ${c.candidatos.map(cand => `
                 <div class="tarjeton-option ${cand.esBlanco ? 'blanco' : ''}" style="cursor:default">
                   <div class="foto" style="background:${cand.esBlanco ? '' : 'linear-gradient(135deg,hsl(243 70% 60%),hsl(271 70% 55%))'}">${cand.esBlanco ? Icons.checkSquare(28) : cand.nombre.split(' ').map(p => p[0]).slice(0, 2).join('')}</div>
