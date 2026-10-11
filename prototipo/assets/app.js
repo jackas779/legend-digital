@@ -63,6 +63,7 @@ function renderLayout(app) {
   }).join('');
 
   app.innerHTML = `
+  <div class="sidebar-overlay" id="sb-overlay"></div>
   <div class="layout">
     <aside class="sidebar">
       <div class="sidebar-brand">
@@ -86,22 +87,23 @@ function renderLayout(app) {
     </aside>
     <div class="main">
       <header class="topbar">
+        <button class="icon-btn" id="btn-menu" title="Menú">${Icons.grip(16)}</button>
         <div>
           <div class="page-title" id="topbar-titulo">—</div>
           <div class="page-sub" id="topbar-sub"></div>
         </div>
         <div class="topbar-actions">
           <div class="search-box">${Icons.search(15)}<input placeholder="Buscar…"></div>
-          <div class="flex items-center gap-8" title="Simulador de estado de la elección (prototipo)">
-            <span class="text-sm text-muted fw-600" style="white-space:nowrap">Estado:</span>
-            <select class="select" style="width:auto;padding:6px 30px 6px 10px;font-size:12.5px" id="sim-estado">
-              ${Object.keys(ESTADOS).map(e => `<option value="${e}" ${State.estadoEleccion === e ? 'selected' : ''}>${ESTADOS[e].label}</option>`).join('')}
-            </select>
-          </div>
-          ${State.enVivo ? `<span class="badge badge-success" style="gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:hsl(var(--success));animation:pulse 1.4s infinite"></span>EN VIVO</span>` : ''}
+          ${State.enVivo ? `<span class="badge badge-success en-vivo" style="gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:hsl(var(--success));animation:pulse 1.4s infinite"></span>EN VIVO</span>` : ''}
           <button class="icon-btn" id="btn-tema" title="Cambiar tema">${document.documentElement.classList.contains('dark') ? Icons.sun(16) : Icons.moon(16)}</button>
-          <button class="icon-btn" title="Notificaciones">${Icons.bell(16)}<span class="dot"></span></button>
+          <button class="icon-btn bell" title="Notificaciones">${Icons.bell(16)}<span class="dot"></span></button>
           ${avatar(State.user.nombre, 34)}
+        </div>
+        <div class="sim-wrap" title="Simulador de estado de la elección (prototipo)">
+          <span class="text-sm text-muted fw-600 sim-label" style="white-space:nowrap">Estado:</span>
+          <select class="select" style="width:auto;padding:6px 30px 6px 10px;font-size:12.5px" id="sim-estado">
+            ${Object.keys(ESTADOS).map(e => `<option value="${e}" ${State.estadoEleccion === e ? 'selected' : ''}>${ESTADOS[e].label}</option>`).join('')}
+          </select>
         </div>
       </header>
       <main class="content" id="vista-contenido"></main>
@@ -109,6 +111,17 @@ function renderLayout(app) {
   </div>`;
 
   // Eventos globales del layout
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sb-overlay');
+  const cerrarDrawer = () => { sidebar.classList.remove('open'); overlay.classList.remove('show'); };
+
+  document.getElementById('btn-menu').addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('show');
+  });
+  overlay.addEventListener('click', cerrarDrawer);
+  document.querySelectorAll('.nav-item').forEach(a => a.addEventListener('click', cerrarDrawer));
+
   document.getElementById('btn-logout').addEventListener('click', () => {
     State.user = null; State.votoEmitido = false; State.seleccionVoto = null;
     if (State.intervaloRT) { clearInterval(State.intervaloRT); State.intervaloRT = null; }
@@ -134,6 +147,9 @@ function renderVista(key) {
   const vista = Vistas[key];
   const titulo = document.getElementById('topbar-titulo');
   const sub = document.getElementById('topbar-sub');
+  // Cierra el drawer móvil al navegar (botón atrás, hash directo, etc.)
+  document.querySelector('.sidebar')?.classList.remove('open');
+  document.querySelector('.sidebar-overlay')?.classList.remove('show');
   if (!vista) { cont.innerHTML = `<div class="card card-body">Vista no encontrada</div>`; return; }
   titulo.textContent = vista.titulo;
   sub.textContent = vista.sub || '';

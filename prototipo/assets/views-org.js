@@ -228,7 +228,7 @@ RegistrarVista('org/multimedia', {
           <div class="card-header"><div class="card-title">${Icons.layout(16)} Biblioteca (${DB.multimedia.length})</div>
           <div class="card-desc">Recursos disponibles para las categorías</div></div>
           <div class="card-body">
-            <div class="grid-3">
+            <div class="grid-3 galeria">
               ${DB.multimedia.map(m => `
                 <div class="card" style="box-shadow:none">
                   <div style="aspect-ratio:1;background:linear-gradient(135deg,hsl(243 60% 45%),hsl(271 60% 35%));border-radius:var(--radius) var(--radius) 0 0;display:grid;place-items:center;color:#fff">${Icons.image(28)}</div>
