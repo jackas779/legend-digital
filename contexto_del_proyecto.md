@@ -1,5 +1,7 @@
 # Contexto del Proyecto: Sistema Web de Votaciones - Festival de la Leyenda Vallenata 2027
 
+> Documento unificado de negocio, UX y arquitectura del proyecto. El frontend visual creado en HTML/CSS/JS se toma como referencia de experiencia de usuario para la implementación final en Vue.js, mientras que Django REST se encarga de la API y persistencia.
+
 ---
 
 ## 1. Informacion General del Proyecto
@@ -83,7 +85,24 @@ El Festival no cuenta con un canal digital oficial para votaciones del público.
 
 ---
 
-## 5. Actores del Sistema (RBAC)
+## 5. Frontend de referencia y arquitectura final
+
+### 5.1 Relación entre prototipo y proyecto real
+El contenido visual y funcional del prototipo en `front/` se utiliza como referencia de UX/UI para el desarrollo real de la aplicación frontend en Vue.js.
+
+- El prototipo valida el flujo de usuario, estados, navegación y componentes visuales.
+- El desarrollo en Vue.js se encarga de convertir ese diseño en una app modular, reactiva y conectada a la API del backend.
+- El backend Django REST se encarga de autenticación, permisos, lógica electoral, persistencia y auditoría.
+
+### 5.2 Stack final del proyecto
+- Frontend: Vue.js + Vite + Pinia + Vue Router
+- Backend: Django + Django REST Framework + JWT
+- Base de datos: PostgreSQL (pensada para producción) / SQLite para desarrollo inicial
+- Comunicación: API REST con JWT y later WebSockets o polling para resultados en tiempo real
+
+---
+
+## 6. Actores del Sistema (RBAC)
 
 1. **Administrador del Sistema:** Control total del sistema, gestión de infraestructura, asignación de roles y permisos (Matriz RBAC), mantenimiento de cuentas y seguridad global.
 2. **Organizador / Gestor Electoral:** Configuración de elecciones, apertura/cierre de votaciones, gestión de categorías, candidatos, tarjetones y carga de normativas/multimedia.
@@ -92,7 +111,7 @@ El Festival no cuenta con un canal digital oficial para votaciones del público.
 
 ---
 
-## 6. Requerimientos del Sistema
+## 7. Requerimientos del Sistema
 
 ### 6.1 Requerimientos Funcionales (RF)
 - **RF-01:** Carga masiva de usuarios en el padrón mediante archivos CSV o Excel (Drag & Drop).
@@ -113,7 +132,7 @@ El Festival no cuenta con un canal digital oficial para votaciones del público.
 
 ---
 
-## 7. Reglas de Negocio (RN)
+## 8. Reglas de Negocio (RN)
 
 ### Seguridad y Autenticación
 - **RN-SEC-01:** Almacenamiento obligatorio de contraseñas mediante hashing seguro (Argon2 / PBKDF2).
@@ -150,7 +169,7 @@ El Festival no cuenta con un canal digital oficial para votaciones del público.
 
 ---
 
-## 8. Especificación de Casos de Uso (CU)
+## 9. Especificación de Casos de Uso (CU)
 
 | Código | Nombre del Caso de Uso | Actores Principales | Descripción Resumida |
 | :--- | :--- | :--- | :--- |
@@ -170,7 +189,7 @@ El Festival no cuenta con un canal digital oficial para votaciones del público.
 
 ---
 
-## 9. Modelo de Datos Conceptual
+## 10. Modelo de Datos Conceptual
 
 Entities y relaciones representadas:
 - `usuarios`: `id`, `documento` (UQ), `nombres`, `apellidos`, `correo` (UQ), `password_hash`, `estado`, `intentos_fallidos`, `bloqueado_hasta`.
@@ -188,7 +207,7 @@ Entities y relaciones representadas:
 
 ---
 
-## 10. Arquitectura Tecnológica Propuesta
+## 11. Arquitectura Tecnológica Propuesta
 
 ```
 +-----------------------------------------------------------------------+

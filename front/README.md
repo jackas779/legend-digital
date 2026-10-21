@@ -1,6 +1,8 @@
-# Prototipo UX/UI — Sistema de Votación Web Seguro
+# Frontend base — Sistema de Votación Web Seguro
 
-Prototipo **navegable y funcional a nivel visual** del frontend del sistema de votación.
+Este directorio representa la referencia visual y UX del frontend del sistema de votación.
+Se mantiene como prototipo base para la implementación final en Vue.js.
+
 Construido en HTML + CSS + JS puro (sin dependencias, sin instalación).
 
 ## Cómo abrirlo
@@ -63,6 +65,11 @@ prototipo/
 
 ## Alcance
 
-Solo **capa visual**: los datos son simulados en el navegador y las acciones muestran el flujo visual
-(toasts, modales, estados). No hay backend: lo siguiente seria conectar este prototipo a la API Django REST
-(JWT, endpoints por CU, WebSockets para resultados en vivo).
+La carpeta `front/` funciona como referencia visual y flujo UX para la implementación real en Vue.js.
+Los datos son simulados en el navegador para validar la experiencia, pero el desarrollo real se conecta con la API de Django REST:
+- JWT
+- endpoints por CU
+- consumo de datos dinámicos
+- WebSockets o polling para resultados en vivo
+
+En resumen: el prototipo no reemplaza la app final, sino que sirve como guía visual para la versión en Vue.
