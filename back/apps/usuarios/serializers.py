@@ -2,9 +2,31 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from .models import Role, Usuario
+from .models import Permission, Role, RolPermiso, Usuario
 
 User = get_user_model()
+
+
+class PermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Permission
+        fields = ['id', 'codigo', 'modulo', 'descripcion']
+
+
+class RoleSerializer(serializers.ModelSerializer):
+    permisos = PermissionSerializer(many=True, read_only=True, source='permisos_asignados.permiso')
+
+    class Meta:
+        model = Role
+        fields = ['id', 'nombre', 'descripcion', 'permisos']
+
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    rol = RoleSerializer(read_only=True)
+
+    class Meta:
+        model = Usuario
+        fields = ['id', 'documento', 'nombres', 'apellidos', 'correo', 'rol', 'estado']
 
 
 class RegisterSerializer(serializers.Serializer):

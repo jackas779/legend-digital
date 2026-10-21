@@ -25,6 +25,20 @@ class Permission(models.Model):
         return self.codigo
 
 
+class RolPermiso(models.Model):
+    rol = models.ForeignKey('Role', on_delete=models.CASCADE, related_name='permisos_asignados')
+    permiso = models.ForeignKey(Permission, on_delete=models.CASCADE, related_name='roles_asignados')
+
+    class Meta:
+        db_table = 'rol_permisos'
+        constraints = [
+            models.UniqueConstraint(fields=['rol', 'permiso'], name='uq_rol_permiso')
+        ]
+
+    def __str__(self):
+        return f'{self.rol} -> {self.permiso}'
+
+
 class Usuario(models.Model):
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,

@@ -53,3 +53,42 @@ class AuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn('access', response.data)
         self.assertIn('refresh', response.data)
+
+    def test_me_and_roles_are_protected(self):
+        from django.contrib.auth import get_user_model
+        from back.apps.usuarios.models import Role, Usuario
+
+        role = Role.objects.create(nombre='Administrador', descripcion='Admin general')
+        user_model = get_user_model()
+        user = user_model.objects.create_user(
+            username='admin1',
+            email='admin@test.com',
+            password='admin1234'
+        )
+        Usuario.objects.create(
+            user=user,
+            documento='999999999',
+            nombres='Admin',
+            apellidos='Sistema',
+            correo='admin@test.com',
+            rol=role,
+        )
+
+        response = self.client.get(reverse('me'))
+        self.assertEqual(response.status_code, 401)
+
+        login = self.client.post(
+            reverse('login'),
+            {'correo': 'admin@test.com', 'password': 'admin1234'},
+            format='json'
+        )
+        token = login.data['access']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+        me = self.client.get(reverse('me'))
+        self.assertEqual(me.status_code, 200)
+        self.assertEqual(me.data['correo'], 'admin@test.com')
+
+        roles = self.client.get(reverse('roles'))
+        self.assertEqual(roles.status_code, 200)
+        self.assertGreaterEqual(len(roles.data), 1)

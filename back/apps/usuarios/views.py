@@ -1,18 +1,46 @@
 from django.contrib.auth import get_user_model
 from django.http import JsonResponse
-from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework import generics, status
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .serializers import LoginSerializer, RegisterSerializer
+from .models import Permission, Role, RolPermiso, Usuario
+from .serializers import (
+    LoginSerializer,
+    PermissionSerializer,
+    RegisterSerializer,
+    RoleSerializer,
+    UserProfileSerializer,
+)
 
 User = get_user_model()
 
 
 def health_view(request):
     return JsonResponse({'status': 'ok', 'module': 'usuarios'})
+
+
+class MeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        perfil = request.user.perfil_usuario
+        serializer = UserProfileSerializer(perfil)
+        return Response(serializer.data)
+
+
+class RoleListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Role.objects.all().order_by('id')
+    serializer_class = RoleSerializer
+
+
+class PermissionListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Permission.objects.all().order_by('id')
+    serializer_class = PermissionSerializer
 
 
 class RegisterView(APIView):
