@@ -1,7 +1,9 @@
 from django.urls import path
 
-from .views import health_view
+from .views import LoginView, RegisterView, health_view
 
 urlpatterns = [
     path('health/', health_view, name='usuarios-health'),
+    path('register/', RegisterView.as_view(), name='register'),
+    path('login/', LoginView.as_view(), name='login'),
 ]
