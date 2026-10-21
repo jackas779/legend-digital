@@ -46,3 +46,33 @@ class EleccionesFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.data['titulo'], 'Elección de ejemplo')
+
+    def test_create_normativa_and_candidato(self):
+        categoria = self.client.post(
+            reverse('categorias-list'),
+            {
+                'titulo': 'Elección de ejemplo',
+                'descripcion': 'Primera categoría',
+                'fecha_apertura': '2026-11-01T10:00:00Z',
+                'fecha_cierre': '2026-11-02T18:00:00Z',
+                'estado': 'BORRADOR',
+                'mostrar_resultados_en_vivo': False,
+            },
+            format='json'
+        )
+        categoria_id = categoria.data['id']
+
+        normativa = self.client.post(
+            reverse('normativas-list', kwargs={'categoria_id': categoria_id}),
+            {'titulo': 'Reglamento', 'contenido_html': '<p>Texto</p>'},
+            format='json'
+        )
+        self.assertEqual(normativa.status_code, 201)
+
+        candidato = self.client.post(
+            reverse('candidatos-list', kwargs={'categoria_id': categoria_id}),
+            {'nombre_candidato': 'Juan Pérez', 'partido_lista': 'Lista A', 'orden_casilla': 1, 'es_voto_blanco': False},
+            format='json'
+        )
+        self.assertEqual(candidato.status_code, 201)
+        self.assertEqual(candidato.data['nombre_candidato'], 'Juan Pérez')
