@@ -17,7 +17,7 @@ class CategoriaElectoral(models.Model):
     fecha_cierre = models.DateTimeField()
     estado = models.CharField(max_length=20, choices=ESTADOS, default='BORRADOR')
     mostrar_resultados_en_vivo = models.BooleanField(default=False)
-    creador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='categorias_creadas')
+    creador = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='categorias_creadas', null=True, blank=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
 
     class Meta:
