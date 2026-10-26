@@ -88,17 +88,21 @@ class RegisterSerializer(serializers.Serializer):
 
 
 class LoginSerializer(serializers.Serializer):
-    correo = serializers.EmailField(required=False, allow_blank=True)
+    correo = serializers.CharField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
-        correo = attrs.get('correo')
+        identificador = (attrs.get('correo') or '').strip()
         password = attrs.get('password')
 
-        if not correo or not password:
-            raise serializers.ValidationError('Correo y contraseña son obligatorios.')
+        if not identificador or not password:
+            raise serializers.ValidationError('Correo/usuario y contraseña son obligatorios.')
 
-        user = User.objects.filter(email__iexact=correo).first()
+        # Permite iniciar sesión con el correo o con el nombre de usuario
+        # (el admin de Django usa username, por eso "admin" también funciona).
+        user = User.objects.filter(email__iexact=identificador).first()
+        if user is None:
+            user = User.objects.filter(username__iexact=identificador).first()
         if user is None or not user.check_password(password):
             raise serializers.ValidationError('Credenciales inválidas.')
 

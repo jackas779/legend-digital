@@ -92,3 +92,39 @@ class AuthFlowTests(TestCase):
         roles = self.client.get(reverse('roles'))
         self.assertEqual(roles.status_code, 200)
         self.assertGreaterEqual(len(roles.data), 1)
+
+    def test_login_accepts_username(self):
+        from django.contrib.auth import get_user_model
+
+        user_model = get_user_model()
+        user_model.objects.create_user(
+            username='admin',
+            email='admin@test.com',
+            password='admin1234',
+        )
+
+        response = self.client.post(
+            reverse('login'),
+            {'correo': 'admin', 'password': 'admin1234'},
+            format='json'
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)
+
+    def test_me_works_for_user_without_profile(self):
+        from django.contrib.auth import get_user_model
+
+        user_model = get_user_model()
+        user = user_model.objects.create_user(
+            username='root',
+            email='root@test.com',
+            password='root1234',
+        )
+
+        self.client.force_authenticate(user=user)
+        response = self.client.get(reverse('me'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['correo'], 'root@test.com')
+        self.assertIsNone(response.data['rol'])
