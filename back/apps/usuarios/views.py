@@ -26,7 +26,20 @@ class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        perfil = request.user.perfil_usuario
+        # Un superusuario creado con createsuperuser no tiene perfil Usuario.
+        # En ese caso devolvemos los datos básicos de la cuenta para no romper el login.
+        perfil = getattr(request.user, 'perfil_usuario', None)
+        if perfil is None:
+            return Response({
+                'id': request.user.id,
+                'documento': '',
+                'nombres': request.user.first_name,
+                'apellidos': request.user.last_name,
+                'correo': request.user.email,
+                'rol': None,
+                'estado': 'ACTIVO' if request.user.is_active else 'INACTIVO',
+            })
+
         serializer = UserProfileSerializer(perfil)
         return Response(serializer.data)
 
