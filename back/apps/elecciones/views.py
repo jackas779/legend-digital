@@ -2,27 +2,73 @@ from django.http import JsonResponse
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 
-from .models import CategoriaElectoral, CandidatoOpcion, Normativa
-from .serializers import CategoriaElectoralSerializer, CandidatoOpcionSerializer, NormativaSerializer
+from .models import Categoria, Edicion, Normativa, Opcion, OpcionVotacion, RecursoMultimedia, Votacion
+from .serializers import (
+    CategoriaSerializer,
+    EdicionSerializer,
+    NormativaSerializer,
+    OpcionSerializer,
+    OpcionVotacionSerializer,
+    RecursoMultimediaSerializer,
+    VotacionSerializer,
+)
 
 
 def health_view(request):
     return JsonResponse({'status': 'ok', 'module': 'elecciones'})
 
 
-class CategoriaListCreateView(generics.ListCreateAPIView):
+class EdicionListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
-    queryset = CategoriaElectoral.objects.all().order_by('-fecha_creacion')
-    serializer_class = CategoriaElectoralSerializer
+    queryset = Edicion.objects.select_related('creador').all()
+    serializer_class = EdicionSerializer
 
     def perform_create(self, serializer):
-        serializer.save(creador=self.request.user)
+        # El perfil Usuario puede no existir (por ejemplo, un superusuario
+        # creado con createsuperuser), por eso el creador es opcional.
+        perfil = getattr(self.request.user, 'perfil_usuario', None)
+        serializer.save(creador=perfil)
+
+
+class EdicionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Edicion.objects.select_related('creador').all()
+    serializer_class = EdicionSerializer
+
+
+class CategoriaListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Categoria.objects.all()
+    serializer_class = CategoriaSerializer
 
 
 class CategoriaDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
-    queryset = CategoriaElectoral.objects.all()
-    serializer_class = CategoriaElectoralSerializer
+    queryset = Categoria.objects.all()
+    serializer_class = CategoriaSerializer
+
+
+class VotacionListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = VotacionSerializer
+
+    def get_queryset(self):
+        queryset = Votacion.objects.select_related('edicion', 'categoria').all()
+        edicion_id = self.request.query_params.get('edicion')
+        categoria_id = self.request.query_params.get('categoria')
+
+        if edicion_id:
+            queryset = queryset.filter(edicion_id=edicion_id)
+        if categoria_id:
+            queryset = queryset.filter(categoria_id=categoria_id)
+
+        return queryset
+
+
+class VotacionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Votacion.objects.select_related('edicion', 'categoria').all()
+    serializer_class = VotacionSerializer
 
 
 class NormativaListCreateView(generics.ListCreateAPIView):
@@ -30,18 +76,38 @@ class NormativaListCreateView(generics.ListCreateAPIView):
     serializer_class = NormativaSerializer
 
     def get_queryset(self):
-        return Normativa.objects.filter(categoria_id=self.kwargs['categoria_id']).order_by('-fecha_publicacion')
+        return Normativa.objects.filter(votacion_id=self.kwargs['votacion_id']).order_by('-fecha_publicacion')
 
     def perform_create(self, serializer):
-        serializer.save(categoria_id=self.kwargs['categoria_id'])
+        serializer.save(votacion_id=self.kwargs['votacion_id'])
 
 
-class CandidatoListCreateView(generics.ListCreateAPIView):
+class OpcionListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
-    serializer_class = CandidatoOpcionSerializer
+    queryset = Opcion.objects.select_related('foto_recurso').all()
+    serializer_class = OpcionSerializer
+
+
+class OpcionDetailView(generics.RetrieveUpdateDestroyAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = Opcion.objects.select_related('foto_recurso').all()
+    serializer_class = OpcionSerializer
+
+
+class OpcionVotacionListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = OpcionVotacionSerializer
 
     def get_queryset(self):
-        return CandidatoOpcion.objects.filter(categoria_id=self.kwargs['categoria_id']).order_by('orden_casilla')
+        return OpcionVotacion.objects.filter(
+            votacion_id=self.kwargs['votacion_id']
+        ).select_related('opcion', 'opcion__foto_recurso').order_by('numero_casilla')
 
     def perform_create(self, serializer):
-        serializer.save(categoria_id=self.kwargs['categoria_id'])
+        serializer.save(votacion_id=self.kwargs['votacion_id'])
+
+
+class RecursoMultimediaListCreateView(generics.ListCreateAPIView):
+    permission_classes = [IsAuthenticated]
+    queryset = RecursoMultimedia.objects.all()
+    serializer_class = RecursoMultimediaSerializer

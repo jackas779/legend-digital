@@ -1,10 +1,9 @@
-
 from django.http import JsonResponse
 from rest_framework import generics
 from rest_framework.permissions import AllowAny
 
-from back.apps.elecciones.models import CandidatoOpcion
-from back.apps.elecciones.serializers import CandidatoOpcionSerializer
+from back.apps.elecciones.models import OpcionVotacion
+from back.apps.elecciones.serializers import OpcionVotacionSerializer
 
 
 def health_view(request):
@@ -15,12 +14,12 @@ def health_view(request):
 
 
 class OpcionesVotacionView(generics.ListAPIView):
-    serializer_class = CandidatoOpcionSerializer
+    serializer_class = OpcionVotacionSerializer
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        categoria_id = self.kwargs['categoria_id']
+        votacion_id = self.kwargs['votacion_id']
 
-        return CandidatoOpcion.objects.filter(
-            categoria_id=categoria_id
-        ).order_by('orden_casilla')
+        return OpcionVotacion.objects.filter(
+            votacion_id=votacion_id
+        ).select_related('opcion', 'opcion__foto_recurso').order_by('numero_casilla')
