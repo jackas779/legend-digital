@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block title %}Eliminar opción — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <div class="login-box" style="max-width:520px">
+    <h1>Eliminar opción</h1>
+    <p class="lead">¿Confirmas eliminar «{{ opcion.nombre }}» de «{{ votacion.nombre }}»?</p>
+
+    {% if opcion.votos.exists %}
+      <ul class="messages">
+        <li class="msg error">
+          No se puede eliminar: esta opción ya registró
+          {{ opcion.votos.count }} voto(s) y el conteo debe conservarse.
+        </li>
+      </ul>
+      <a href="{% url 'gestion:opcion_lista' votacion.id %}" class="button">Volver</a>
+    {% else %}
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit">Sí, eliminar definitivamente</button>
+        <a href="{% url 'gestion:opcion_lista' votacion.id %}" class="button ghost">Cancelar</a>
+      </form>
+    {% endif %}
+  </div>
+{% endblock %}

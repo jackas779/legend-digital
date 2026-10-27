@@ -41,4 +41,41 @@ urlpatterns = [
         gestion_views.categoria_eliminar,
         name='categoria_eliminar',
     ),
+    path('votaciones/', gestion_views.votacion_lista, name='votaciones'),
+    path('votaciones/nueva/', gestion_views.votacion_crear, name='votacion_crear'),
+    path(
+        'votaciones/<int:votacion_id>/editar/',
+        gestion_views.votacion_editar,
+        name='votacion_editar',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/abrir/',
+        gestion_views.votacion_abrir,
+        name='votacion_abrir',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/cerrar/',
+        gestion_views.votacion_cerrar,
+        name='votacion_cerrar',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/opciones/',
+        gestion_views.opcion_lista,
+        name='opcion_lista',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/opciones/nueva/',
+        gestion_views.opcion_crear,
+        name='opcion_crear',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/opciones/<int:opcion_id>/editar/',
+        gestion_views.opcion_editar,
+        name='opcion_editar',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/opciones/<int:opcion_id>/eliminar/',
+        gestion_views.opcion_eliminar,
+        name='opcion_eliminar',
+    ),
 ]

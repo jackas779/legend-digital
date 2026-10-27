@@ -457,3 +457,442 @@ class GestionCategoriasTests(TestCase):
 
         self.assertRedirects(respuesta, reverse('gestion:categorias'))
         self.assertFalse(Categoria.objects.filter(pk=categoria.pk).exists())
+
+
+class GestionVotacionesTests(TestCase):
+    """Entregables VO1-VO5: gestión MVT de votaciones."""
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.core.cache import cache
+        from django.core.management import call_command
+        from django.utils import timezone
+
+        from back.apps.elecciones.models import Categoria, Edicion
+        from django.contrib.auth import get_user_model
+
+        from back.apps.usuarios.models import Role, Usuario
+
+        cache.clear()
+        call_command('cargar_permisos', stdout=io.StringIO())
+
+        self.edicion = Edicion.objects.create(nombre='Festival', anio=2027)
+        self.otra_edicion = Edicion.objects.create(nombre='Congreso', anio=2028)
+        self.categoria = Categoria.objects.create(nombre='Música')
+        self.rol_organizador = Role.objects.get(nombre='Organizador')
+        self.rol_votante = Role.objects.get(nombre='Votante')
+
+        self.user_model = get_user_model()
+        user = self.user_model.objects.create_user(
+            username='organizador-votes', password='clave-test-2026'
+        )
+        Usuario.objects.create(
+            user=user,
+            documento='8809000001',
+            nombres='Organizador',
+            apellidos='Prueba',
+            correo='organizador-votes@test.com',
+            rol=self.rol_organizador,
+        )
+        self.client.force_login(user)
+
+        self.ahora = timezone.now()
+        self.delta = timedelta(days=1)
+        self.datos_base = {
+            'edicion': self.edicion.id,
+            'categoria': self.categoria.id,
+            'nombre': 'Canción favorita',
+            'fecha_apertura': (self.ahora - self.delta).strftime('%Y-%m-%dT%H:%M'),
+            'fecha_cierre': (self.ahora + self.delta).strftime('%Y-%m-%dT%H:%M'),
+            'estado': 'ACTIVA',
+        }
+
+    def _votacion(self, **extra):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        from back.apps.elecciones.models import Votacion
+
+        datos = {
+            'edicion': self.edicion,
+            'categoria': self.categoria,
+            'nombre': 'Canción favorita',
+            'fecha_apertura': timezone.now() - timedelta(days=1),
+            'fecha_cierre': timezone.now() + timedelta(days=1),
+        }
+        datos.update(extra)
+        return Votacion.objects.create(**datos)
+
+    def test_votante_recibe_403(self):
+        zeros = int(self.rol_votante.id)
+        votante = self.user_model.objects.create_user(
+            username='votante-votes', password='clave-test-2026'
+        )
+        Usuario.objects.create(
+            user=votante,
+            documento=f'88{zeros:08d}',
+            nombres='Votante',
+            apellidos='Prueba',
+            correo='votante-votes@test.com',
+            rol=self.rol_votante,
+        )
+        self.client.force_login(votante)
+
+        respuesta = self.client.get(reverse('gestion:votaciones'))
+
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_listado_filtra_por_edicion_y_categoria(self):
+        self._votacion(nombre='A de musica')
+        self._votacion(edicion=self.otra_edicion, nombre='B de musica')
+        self._votacion(nombre='C de otra', edicion=self.edicion)
+
+        respuesta = self.client.get(
+            reverse('gestion:votaciones'),
+            {'edicion': self.otra_edicion.id, 'categoria': self.categoria.id},
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        nombres = [v.nombre for v in respuesta.context['votaciones']]
+        self.assertEqual(nombres, ['B de musica'])
+
+    def test_listado_muestra_total_de_votos(self):
+        from back.apps.elecciones.models import Opcion
+        from back.apps.votacion.models import Voto
+
+        votacion = self._votacion()
+        opcion = Opcion.objects.create(votacion=votacion, nombre='Canción A', orden=1)
+        Voto.objects.create(opcion=opcion)
+
+        respuesta = self.client.get(reverse('gestion:votaciones'))
+
+        anotada = [v for v in respuesta.context['votaciones'] if v.pk == votacion.pk][0]
+        self.assertEqual(anotada.num_votos, 1)
+
+    def test_crear_votacion_valida(self):
+        respuesta = self.client.post(
+            reverse('gestion:votacion_crear'), self.datos_base
+        )
+
+        self.assertRedirects(respuesta, reverse('gestion:votaciones'))
+        from back.apps.elecciones.models import Votacion
+
+        self.assertTrue(
+            Votacion.objects.filter(nombre='Canción favorita', edicion=self.edicion).exists()
+        )
+
+    def test_nombre_unico_por_edicion_y_categoria(self):
+        self._votacion()
+
+        # Misma edición y categoría: rechaza el duplicado en el formulario.
+        duplicada = self.client.post(
+            reverse('gestion:votacion_crear'), self.datos_base
+        )
+        self.assertEqual(duplicada.status_code, 200)
+        self.assertTrue(duplicada.context['form'].errors['nombre'])
+
+        # Otra edición admite el mismo nombre (la clave es edición+categoría).
+        ok = self.client.post(
+            reverse('gestion:votacion_crear'),
+            {**self.datos_base, 'edicion': self.otra_edicion.id, 'nombre': 'Canción favorita'},
+        )
+        self.assertRedirects(ok, reverse('gestion:votaciones'))
+
+    def test_fechas_apertura_menor_que_cierre(self):
+        respuesta = self.client.post(
+            reverse('gestion:votacion_crear'),
+            {
+                **self.datos_base,
+                'fecha_apertura': self.datos_base['fecha_cierre'],
+                'fecha_cierre': self.datos_base['fecha_apertura'],
+            },
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTrue(respuesta.context['form'].errors['fecha_cierre'])
+
+    def test_editar_votacion(self):
+        votacion = self._votacion()
+
+        respuesta = self.client.post(
+            reverse('gestion:votacion_editar', args=[votacion.id]),
+            {
+                **self.datos_base,
+                'nombre': 'Canción del público',
+            },
+        )
+
+        self.assertRedirects(respuesta, reverse('gestion:votaciones'))
+        votacion.refresh_from_db()
+        self.assertEqual(votacion.nombre, 'Canción del público')
+
+    def test_abrir_y_no_reabrir_finalizada(self):
+        votacion = self._votacion(estado='BORRADOR')
+
+        self.client.post(reverse('gestion:votacion_abrir', args=[votacion.id]))
+        votacion.refresh_from_db()
+        self.assertEqual(votacion.estado, 'ACTIVA')
+
+        self.client.post(reverse('gestion:votacion_cerrar', args=[votacion.id]))
+        votacion.refresh_from_db()
+        self.assertEqual(votacion.estado, 'FINALIZADA')
+
+        self.client.post(reverse('gestion:votacion_abrir', args=[votacion.id]))
+        votacion.refresh_from_db()
+        self.assertEqual(votacion.estado, 'FINALIZADA')
+
+    def test_cerrar_no_borra_votos(self):
+        from back.apps.elecciones.models import Opcion
+        from back.apps.votacion.models import Voto
+
+        votacion = self._votacion(estado='ACTIVA')
+        opcion = Opcion.objects.create(votacion=votacion, nombre='Canción A', orden=1)
+        Voto.objects.create(opcion=opcion)
+
+        respuesta = self.client.post(reverse('gestion:votacion_cerrar', args=[votacion.id]))
+
+        self.assertRedirects(respuesta, reverse('gestion:votaciones'))
+        votacion.refresh_from_db()
+        self.assertEqual(votacion.estado, 'FINALIZADA')
+        self.assertEqual(Voto.objects.count(), 1)
+
+    def test_fuera_de_rango_no_se_vota(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from back.apps.elecciones.models import Opcion
+        from django.contrib.auth import get_user_model
+
+        from back.apps.usuarios.models import Usuario
+
+        # VO4: estado ACTIVA pero la ventana ya terminó; no se permite votar.
+        votacion = self._votacion(
+            estado='ACTIVA',
+            fecha_apertura=timezone.now() - timedelta(days=2),
+            fecha_cierre=timezone.now() - timedelta(days=1),
+        )
+        Opcion.objects.create(votacion=votacion, nombre='Canción A', orden=1)
+
+        votante = self.user_model.objects.create_user(
+            username='votante-rango', password='voto1234'
+        )
+        Usuario.objects.create(
+            user=votante,
+            documento='8809000009',
+            nombres='Votante',
+            apellidos='Prueba',
+            correo='votante-rango@test.com',
+            rol=self.rol_votante,
+        )
+        self.client.force_login(votante)
+
+        respuesta = self.client.post(
+            reverse('votar', args=[votacion.id]), {'opcion': 1}
+        )
+
+        self.assertRedirects(respuesta, reverse('tarjeton', args=[votacion.id]))
+        from back.apps.votacion.models import Voto
+
+        self.assertEqual(Voto.objects.count(), 0)
+
+
+class GestionOpcionesTests(TestCase):
+    """Entregables OP1-OP4: opciones dentro de una votación."""
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.core.cache import cache
+        from django.core.management import call_command
+        from django.contrib.auth import get_user_model
+        from django.utils import timezone
+
+        from back.apps.elecciones.models import Categoria, Edicion, Votacion
+        from back.apps.usuarios.models import Role, Usuario
+
+        cache.clear()
+        call_command('cargar_permisos', stdout=io.StringIO())
+
+        self.rol_organizador = Role.objects.get(nombre='Organizador')
+        edicion = Edicion.objects.create(nombre='Festival', anio=2027)
+        categoria = Categoria.objects.create(nombre='Música')
+        self.votacion = Votacion.objects.create(
+            edicion=edicion,
+            categoria=categoria,
+            nombre='Canción favorita',
+            estado='ACTIVA',
+            fecha_apertura=timezone.now() - timedelta(days=1),
+            fecha_cierre=timezone.now() + timedelta(days=1),
+        )
+
+        self.user_model = get_user_model()
+        user = self.user_model.objects.create_user(
+            username='organizador-opc', password='clave-test-2026'
+        )
+        Usuario.objects.create(
+            user=user,
+            documento='8809000055',
+            nombres='Organizador',
+            apellidos='Prueba',
+            correo='organizador-opc@test.com',
+            rol=self.rol_organizador,
+        )
+        self.client.force_login(user)
+
+    def _opcion(self, nombre='Canción A', orden=1, **extra):
+        from back.apps.elecciones.models import Opcion
+
+        return Opcion.objects.create(votacion=self.votacion, nombre=nombre, orden=orden, **extra)
+
+    def test_listado_ordenado_por_casilla(self):
+        self._opcion(nombre='Canción B', orden=2)
+        self._opcion(nombre='Canción C', orden=3)
+        self._opcion(nombre='Canción A', orden=1)
+
+        respuesta = self.client.get(
+            reverse('gestion:opcion_lista', args=[self.votacion.id])
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        nombres = [o.nombre for o in respuesta.context['opciones']]
+        self.assertEqual(nombres, ['Canción A', 'Canción B', 'Canción C'])
+
+    def test_crear_opcion(self):
+        respuesta = self.client.post(
+            reverse('gestion:opcion_crear', args=[self.votacion.id]),
+            {'nombre': 'Canción X', 'orden': 1, 'subtitulo': 'Nuevo artista'},
+        )
+
+        self.assertRedirects(
+            respuesta,
+            reverse('gestion:opcion_lista', args=[self.votacion.id]),
+        )
+        from back.apps.elecciones.models import Opcion
+
+        self.assertTrue(
+            Opcion.objects.filter(votacion=self.votacion, nombre='Canción X').exists()
+        )
+
+    def test_orden_unico_por_votacion(self):
+        self._opcion(orden=1)
+
+        repetida = self.client.post(
+            reverse('gestion:opcion_crear', args=[self.votacion.id]),
+            {'nombre': 'Canción B', 'orden': 1, 'subtitulo': ''},
+        )
+
+        self.assertEqual(repetida.status_code, 200)
+        self.assertTrue(repetida.context['form'].errors['orden'])
+
+    def test_mismo_orden_en_otra_votacion_es_valido(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from back.apps.elecciones.models import Edicion, Opcion, Votacion
+
+        self._opcion(orden=1)
+
+        categoria = self.votacion.categoria
+        otra = Votacion.objects.create(
+            edicion=Edicion.objects.first(),
+            categoria=categoria,
+            nombre='Otra votación',
+            estado='BORRADOR',
+            fecha_apertura=timezone.now() + timedelta(days=1),
+            fecha_cierre=timezone.now() + timedelta(days=2),
+        )
+
+        respuesta = self.client.post(
+            reverse('gestion:opcion_crear', args=[otra.id]),
+            {'nombre': 'Otra canción', 'orden': 1, 'subtitulo': ''},
+        )
+
+        self.assertRedirects(respuesta, reverse('gestion:opcion_lista', args=[otra.id]))
+
+    def test_editar_opcion(self):
+        opcion = self._opcion()
+
+        respuesta = self.client.post(
+            reverse('gestion:opcion_editar', args=[self.votacion.id, opcion.id]),
+            {'nombre': 'Canción A (regrabada)', 'orden': 1, 'subtitulo': 'Remix'},
+        )
+
+        self.assertRedirects(
+            respuesta,
+            reverse('gestion:opcion_lista', args=[self.votacion.id]),
+        )
+        opcion.refresh_from_db()
+        self.assertEqual(opcion.nombre, 'Canción A (regrabada)')
+
+    def test_no_deja_eliminar_opcion_con_votos(self):
+        from back.apps.elecciones.models import Opcion
+        from back.apps.votacion.models import Voto
+
+        opcion = self._opcion()
+        Voto.objects.create(opcion=opcion)
+
+        bloqueado = self.client.post(
+            reverse('gestion:opcion_eliminar', args=[self.votacion.id, opcion.id])
+        )
+
+        self.assertRedirects(
+            bloqueado,
+            reverse('gestion:opcion_lista', args=[self.votacion.id]),
+        )
+        self.assertTrue(Opcion.objects.filter(pk=opcion.pk).exists())
+        self.assertEqual(Voto.objects.count(), 1)
+
+    def test_elimina_opcion_libre(self):
+        opcion = self._opcion()
+
+        respuesta = self.client.post(
+            reverse('gestion:opcion_eliminar', args=[self.votacion.id, opcion.id])
+        )
+
+        self.assertRedirects(
+            respuesta,
+            reverse('gestion:opcion_lista', args=[self.votacion.id]),
+        )
+        from back.apps.elecciones.models import Opcion
+
+        self.assertFalse(Opcion.objects.filter(pk=opcion.pk).exists())
+
+    def test_votante_no_gestiona_opciones(self):
+        from back.apps.usuarios.models import Role, Usuario
+
+        rol_votante = Role.objects.get(nombre='Votante')
+        votante = self.user_model.objects.create_user(
+            username='votante-opc', password='clave-test-2026'
+        )
+        Usuario.objects.create(
+            user=votante,
+            documento=f'88{int(rol_votante.id):08d}',
+            nombres='Votante',
+            apellidos='Prueba',
+            correo='votante-opc@test.com',
+            rol=rol_votante,
+        )
+        self.client.force_login(votante)
+
+        respuesta = self.client.get(
+            reverse('gestion:opcion_lista', args=[self.votacion.id])
+        )
+
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_inline_admin_sigue_disponible(self):
+        """OP4: el inline de opciones se mantiene como vía alterna."""
+        from django.contrib import admin as admin_site
+
+        from back.apps.elecciones.admin import VotacionAdmin
+
+        inline_context = VotacionAdmin(self.votacion.__class__, admin_site.site).inlines
+        from back.apps.elecciones.models import Opcion
+
+        self.assertIn(
+            [i for i in inline_context if i.model == Opcion][0].model,
+            (Opcion,),
+        )

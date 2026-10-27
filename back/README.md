@@ -152,6 +152,15 @@ Enforcement:
 | POST | `/gestion/categorias/nueva/` | Crear categoría (`categorias.crear`) |
 | POST | `/gestion/categorias/<id>/editar/` | Editar categoría (`categorias.editar`) |
 | POST | `/gestion/categorias/<id>/eliminar/` | Eliminar con confirmación (`categorias.eliminar`) |
+| GET | `/gestion/votaciones/` | Gestión de votaciones, filtrable por edición y categoría (`votaciones.ver`) |
+| POST | `/gestion/votaciones/nueva/` | Crear votación (`votaciones.crear`) |
+| POST | `/gestion/votaciones/<id>/editar/` | Editar votación (`votaciones.editar`) |
+| POST | `/gestion/votaciones/<id>/abrir/` | Abrir (→ ACTIVA) |
+| POST | `/gestion/votaciones/<id>/cerrar/` | Cerrar (→ FINALIZADA; conserva votos) |
+| GET | `/gestion/votaciones/<id>/opciones/` | Opciones de la votación por casilla (`opciones.ver`) |
+| POST | `/gestion/votaciones/<id>/opciones/nueva/` | Crear opción (`opciones.crear`) |
+| POST | `/gestion/votaciones/<id>/opciones/<oid>/editar/` | Editar opción (`opciones.editar`) |
+| POST | `/gestion/votaciones/<id>/opciones/<oid>/eliminar/` | Eliminar opción, bloqueada si tiene votos (`opciones.eliminar`) |
 | — | `/admin/` | Panel de administración |
 
 ## Usuarios de prueba
@@ -235,9 +244,11 @@ voto duplicado, opción de otra votación, votación cerrada, resultados,
 autenticación (correo/usuario/documento, suspendidos, bloqueo por intentos,
 throttling 429, sesión con "recordarme", logout por POST), registro y gestión
 de cuentas, permisos (catálogo idempotente, helper por rol, 403 del votante
-en escrituras, panel por rol) y gestión MVT de ediciones/categorías
+en escrituras, panel por rol), gestión MVT de ediciones/categorías
 (duplicados en el formulario, confirmación de borrado, bloqueos con motivo y
-transiciones de estado).
+transiciones de estado) y gestión MVT de votaciones/opciones (filtro por
+edición y categoría, fechas válidas, abrir/cerrar conservando votos, casilla
+única por votación y bloqueo de opciones con votos).
 
 ## Migraciones
 

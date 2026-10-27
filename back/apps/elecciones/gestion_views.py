@@ -10,8 +10,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from back.apps.usuarios.permisos import requiere_permiso, tiene_permiso
 
-from .gestion_forms import CategoriaForm, EdicionForm
-from .models import Categoria, Edicion
+from .gestion_forms import CategoriaForm, EdicionForm, OpcionForm, VotacionForm
+from .models import Categoria, Edicion, Opcion, Votacion
 
 
 # --------------------------------------------------------------------------
@@ -202,4 +202,215 @@ def categoria_eliminar(request, categoria_id):
         request,
         'gestion/categoria_confirmar_borrar.html',
         {'objeto': categoria, 'usos': usos},
+    )
+
+
+# --------------------------------------------------------------------------
+# Votaciones (VO1, VO2, VO3, VO5)
+# --------------------------------------------------------------------------
+# VO4 (control de apertura) vive en el tarjetón: votacion.esta_abierta exige
+# estado=ACTIVA y la fecha actual dentro del rango; lo prueba el test de
+# 'votacion cerrada' y el nuevo test de apertura fuera de rango.
+
+@requiere_permiso('votaciones.ver')
+def votacion_lista(request):
+    """VO1: listado filtrable por edición y categoría, con total de votos."""
+    votaciones = (
+        Votacion.objects.select_related('edicion', 'categoria')
+        .annotate(num_votos=Count('opciones__votos'))
+        .order_by('-fecha_apertura')
+    )
+
+    filtro_edicion = request.GET.get('edicion') or ''
+    filtro_categoria = request.GET.get('categoria') or ''
+    if filtro_edicion.isdigit():
+        votaciones = votaciones.filter(edicion_id=filtro_edicion)
+    if filtro_categoria.isdigit():
+        votaciones = votaciones.filter(categoria_id=filtro_categoria)
+
+    return render(
+        request,
+        'gestion/votacion_lista.html',
+        {
+            'votaciones': votaciones,
+            'ediciones': Edicion.objects.order_by('-anio', 'nombre'),
+            'categorias': Categoria.objects.order_by('nombre'),
+            'filtro_edicion': filtro_edicion,
+            'filtro_categoria': filtro_categoria,
+            'puede_crear': tiene_permiso(request.user, 'votaciones.crear'),
+        },
+    )
+
+
+@requiere_permiso('votaciones.crear')
+def votacion_crear(request):
+    """VO2: alta con selects de edición y categoría."""
+    form = VotacionForm(data=request.POST or None)
+
+    if request.method == 'POST' and form.is_valid():
+        votacion = form.save()
+        messages.success(request, f'Votación «{votacion.nombre}» creada.')
+        return redirect('gestion:votaciones')
+
+    return render(
+        request,
+        'gestion/votacion_form.html',
+        {'form': form, 'titulo': 'Nueva votación'},
+    )
+
+
+@requiere_permiso('votaciones.editar')
+def votacion_editar(request, votacion_id):
+    """VO2 + VO3: edición y validación de fechas."""
+    votacion = get_object_or_404(Votacion, pk=votacion_id)
+    form = VotacionForm(data=request.POST or None, instance=votacion)
+
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, f'Votación «{votacion.nombre}» actualizada.')
+        return redirect('gestion:votaciones')
+
+    return render(
+        request,
+        'gestion/votacion_form.html',
+        {'form': form, 'titulo': f'Editar {votacion}', 'votacion': votacion},
+    )
+
+
+@requiere_permiso('votaciones.editar')
+def votacion_abrir(request, votacion_id):
+    """VO5: BORRADOR/PROGRAMADA → ACTIVA (solo por POST)."""
+    votacion = get_object_or_404(Votacion, pk=votacion_id)
+
+    if request.method == 'POST':
+        if votacion.estado == 'FINALIZADA':
+            messages.error(request, 'Una votación FINALIZADA no se reabre.')
+        elif votacion.estado in ('BORRADOR', 'PROGRAMADA'):
+            votacion.estado = 'ACTIVA'
+            votacion.save(update_fields=['estado'])
+            messages.success(request, f'Votación «{votacion.nombre}» abierta (ACTIVA).')
+        else:
+            messages.warning(request, f'La votación ya está en estado {votacion.estado}.')
+
+    return redirect('gestion:votaciones')
+
+
+@requiere_permiso('votaciones.editar')
+def votacion_cerrar(request, votacion_id):
+    """VO5: cierre definitivo; no borra votos y habilita resultados."""
+    votacion = get_object_or_404(Votacion, pk=votacion_id)
+
+    if request.method == 'POST':
+        if votacion.estado == 'FINALIZADA':
+            messages.warning(request, f'La votación «{votacion.nombre}» ya está FINALIZADA.')
+        else:
+            votacion.estado = 'FINALIZADA'
+            votacion.save(update_fields=['estado'])
+            total = votacion.total_votos
+            messages.success(
+                request,
+                f'Votación «{votacion.nombre}» cerrada. Sus {total} voto(s) se '
+                'conservan y los resultados quedan visibles.',
+            )
+
+    return redirect('gestion:votaciones')
+
+
+# --------------------------------------------------------------------------
+# Opciones dentro de una votación (OP1, OP2, OP3)
+# --------------------------------------------------------------------------
+
+@requiere_permiso('opciones.ver')
+def opcion_lista(request, votacion_id):
+    """OP1: opciones de la votación ordenadas por casilla, con votos."""
+    votacion = get_object_or_404(
+        Votacion.objects.select_related('edicion', 'categoria'), pk=votacion_id
+    )
+
+    return render(
+        request,
+        'gestion/opcion_lista.html',
+        {
+            'votacion': votacion,
+            'opciones': (
+                Opcion.objects.filter(votacion=votacion)
+                .annotate(num_votos=Count('votos'))
+                .order_by('orden', 'nombre')
+            ),
+            'puede_crear': tiene_permiso(request.user, 'opciones.crear'),
+        },
+    )
+
+
+@requiere_permiso('opciones.crear')
+def opcion_crear(request, votacion_id):
+    """OP2: alta de opción con casilla única en la votación."""
+    votacion = get_object_or_404(Votacion, pk=votacion_id)
+    form = OpcionForm(data=request.POST or None, votacion=votacion)
+
+    if request.method == 'POST' and form.is_valid():
+        opcion = form.save(commit=False)
+        opcion.votacion = votacion
+        opcion.save()
+        messages.success(request, f'Opción «{opcion.nombre}» creada.')
+        return redirect('gestion:opcion_lista', votacion_id=votacion.id)
+
+    return render(
+        request,
+        'gestion/opcion_form.html',
+        {
+            'form': form,
+            'votacion': votacion,
+            'titulo': f'Nueva opción en «{votacion.nombre}»',
+        },
+    )
+
+
+@requiere_permiso('opciones.editar')
+def opcion_editar(request, votacion_id, opcion_id):
+    """OP2: edición con la casilla única por votación."""
+    votacion = get_object_or_404(Votacion, pk=votacion_id)
+    opcion = get_object_or_404(Opcion, pk=opcion_id, votacion=votacion)
+    form = OpcionForm(data=request.POST or None, instance=opcion, votacion=votacion)
+
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, f'Opción «{opcion.nombre}» actualizada.')
+        return redirect('gestion:opcion_lista', votacion_id=votacion.id)
+
+    return render(
+        request,
+        'gestion/opcion_form.html',
+        {
+            'form': form,
+            'votacion': votacion,
+            'titulo': f'Editar {opcion.nombre}',
+        },
+    )
+
+
+@requiere_permiso('opciones.eliminar')
+def opcion_eliminar(request, votacion_id, opcion_id):
+    """OP3: bloquea el borrado si la opción ya tiene votos."""
+    votacion = get_object_or_404(Votacion, pk=votacion_id)
+    opcion = get_object_or_404(Opcion, pk=opcion_id, votacion=votacion)
+
+    if request.method == 'POST':
+        if opcion.votos.exists():
+            messages.error(
+                request,
+                f'No se puede eliminar «{opcion.nombre}»: ya registró '
+                f'{opcion.votos.count()} voto(s) y el conteo debe conservarse.',
+            )
+            return redirect('gestion:opcion_lista', votacion_id=votacion.id)
+
+        nombre = opcion.nombre
+        opcion.delete()
+        messages.success(request, f'Opción «{nombre}» eliminada.')
+        return redirect('gestion:opcion_lista', votacion_id=votacion.id)
+
+    return render(
+        request,
+        'gestion/opcion_confirmar_borrar.html',
+        {'votacion': votacion, 'opcion': opcion},
     )
