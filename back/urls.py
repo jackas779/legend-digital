@@ -23,4 +23,7 @@ urlpatterns = [
 
     # Vistas MVT: Edición → Categoría → Votación → Opción → Voto
     path('', include('back.apps.votacion.web_urls')),
+
+    # Gestión MVT: ediciones y categorías (ED1-ED4, CA1-CA3).
+    path('gestion/', include('back.apps.elecciones.gestion_urls')),
 ]

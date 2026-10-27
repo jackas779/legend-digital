@@ -124,8 +124,10 @@ Enforcement:
 - **Panel de Django**: cada ModelAdmin consulta los mismos códigos; el
   Organizador ve elecciones y votación pero no usuarios ni auditoría, y la
   urna (`Voto`) y el padrón son de solo lectura para todos.
-- Cuando exista la gestión MVT (semanas siguientes), usará el decorador
-  `@requiere_permiso(codigo)` del mismo módulo (`back/apps/usuarios/permisos.py`).
+- **Gestión MVT** (`/gestion/…`): cada vista exige su permiso con el
+  decorador `@requiere_permiso(codigo)` del módulo
+  `back/apps/usuarios/permisos.py`; anónimo va al login, sin permiso recibe
+  403.
 
 ## Rutas MVT
 
@@ -140,6 +142,16 @@ Enforcement:
 | POST | `/accounts/logout/` | Cierre de sesión (por POST, con CSRF) |
 | GET | `/registro/` | Crear cuenta de votante |
 | GET | `/cuenta/password/` | Cambiar contraseña (requiere sesión) |
+| GET | `/gestion/ediciones/` | Gestión de ediciones (`ediciones.ver`) |
+| POST | `/gestion/ediciones/nueva/` | Crear edición (`ediciones.crear`) |
+| POST | `/gestion/ediciones/<id>/editar/` | Editar edición (`ediciones.editar`) |
+| POST | `/gestion/ediciones/<id>/eliminar/` | Eliminar con confirmación (`ediciones.eliminar`) |
+| POST | `/gestion/ediciones/<id>/publicar/` | Publicar (→ ACTIVA) |
+| POST | `/gestion/ediciones/<id>/finalizar/` | Finalizar (→ FINALIZADA, sin regreso) |
+| GET | `/gestion/categorias/` | Gestión de categorías (`categorias.ver`) |
+| POST | `/gestion/categorias/nueva/` | Crear categoría (`categorias.crear`) |
+| POST | `/gestion/categorias/<id>/editar/` | Editar categoría (`categorias.editar`) |
+| POST | `/gestion/categorias/<id>/eliminar/` | Eliminar con confirmación (`categorias.eliminar`) |
 | — | `/admin/` | Panel de administración |
 
 ## Usuarios de prueba
@@ -222,8 +234,10 @@ Cubren creación de ediciones/votaciones/opciones, tarjetón, registro de voto,
 voto duplicado, opción de otra votación, votación cerrada, resultados,
 autenticación (correo/usuario/documento, suspendidos, bloqueo por intentos,
 throttling 429, sesión con "recordarme", logout por POST), registro y gestión
-de cuentas, y permisos (catálogo idempotente, helper por rol, 403 del votante
-en escrituras, panel por rol).
+de cuentas, permisos (catálogo idempotente, helper por rol, 403 del votante
+en escrituras, panel por rol) y gestión MVT de ediciones/categorías
+(duplicados en el formulario, confirmación de borrado, bloqueos con motivo y
+transiciones de estado).
 
 ## Migraciones
 

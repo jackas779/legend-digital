@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <div class="login-box" style="max-width:480px">
+    <h1>Categorías</h1>
+    <p class="lead"><a href="{% url 'gestion:ediciones' %}">Ver ediciones</a>.</p>
+
+    {% if puede_crear %}<p><a class="button" href="{% url 'gestion:categoria_crear' %}">+ Nueva categoría</a></p>{% endif %}
+
+    {% for categoria in categorias %}
+      <div class="card">
+        <strong>{{ categoria.nombre }}</strong>
+        <div class="meta">{{ categoria.num_votaciones }} votacion(es) usan esta categoría</div>
+        <div>
+          <a href="{% url 'gestion:categoria_editar' categoria.id %}">Editar</a> ·
+          <a href="{% url 'gestion:categoria_eliminar' categoria.id %}">Eliminar</a>
+        </div>
+      </div>
+    {% empty %}
+      <p class="empty">No hay categorías todavía.</p>
+    {% endfor %}
+  </div>
+{% endblock %}

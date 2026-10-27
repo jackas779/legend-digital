@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% block title %}Gestión de ediciones — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <h1>Ediciones</h1>
+  <p class="lead">Proceso electoral completo. <a href="{% url 'gestion:categorias' %}">Ver categorías</a>.</p>
+
+  {% if puede_crear %}<p><a class="button" href="{% url 'gestion:edicion_crear' %}">+ Nueva edición</a></p>{% endif %}
+
+  {% for edicion in ediciones %}
+    <div class="card">
+      <strong>{{ edicion.nombre }} {{ edicion.anio }}</strong>
+      <span class="badge {% if edicion.estado == 'ACTIVA' %}activa{% elif edicion.estado == 'FINALIZADA' %}finalizada{% endif %}">
+        {{ edicion.estado }}
+      </span>
+      <div class="meta">
+        {{ edicion.num_votaciones }} votacion(es)
+      </div>
+      <div>
+        <a href="{% url 'gestion:edicion_editar' edicion.id %}">Editar</a> ·
+        <a href="{% url 'gestion:edicion_eliminar' edicion.id %}">Eliminar</a>
+        {% if edicion.estado == 'BORRADOR' or edicion.estado == 'PROGRAMADA' %}
+        <form class="inline" method="post" action="{% url 'gestion:edicion_publicar' edicion.id %}">
+          {% csrf_token %}
+          <button type="submit" class="ghost">Publicar</button>
+        </form>
+        {% endif %}
+        {% if edicion.estado != 'FINALIZADA' %}
+        <form class="inline" method="post" action="{% url 'gestion:edicion_finalizar' edicion.id %}">
+          {% csrf_token %}
+          <button type="submit" class="ghost">Finalizar</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  {% empty %}
+    <p class="empty">No hay ediciones todavía.</p>
+  {% endfor %}
+{% endblock %}

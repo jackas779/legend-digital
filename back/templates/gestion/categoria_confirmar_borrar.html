@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block title %}Eliminar categoría — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <div class="login-box" style="max-width:520px">
+    <h1>Eliminar categoría</h1>
+    <p class="lead">¿Confirmas eliminar la categoría «{{ objeto.nombre }}»?</p>
+
+    {% if usos %}
+      <ul class="messages">
+        <li class="msg error">
+          No se puede eliminar: la usan {{ usos|length }} votación(es):
+          {% for v in usos %}{{ v.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+        </li>
+      </ul>
+      <a href="{% url 'gestion:categorias' %}" class="button">Volver</a>
+    {% else %}
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit">Sí, eliminar definitivamente</button>
+        <a href="{% url 'gestion:categorias' %}" class="button ghost">Cancelar</a>
+      </form>
+    {% endif %}
+  </div>
+{% endblock %}
