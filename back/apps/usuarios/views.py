@@ -3,6 +3,7 @@ from django.http import JsonResponse
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -83,7 +84,10 @@ class RegisterView(APIView):
 
 
 class LoginView(APIView):
+    """Login JWT (A1/A11): mismo backend y throttling de 5 intentos/min."""
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'login'
 
     def post(self, request):
         serializer = LoginSerializer(data=request.data)

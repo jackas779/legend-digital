@@ -108,9 +108,40 @@ Luego abre:
 | GET | `/votaciones/<id>/` | Tarjetón |
 | POST | `/votaciones/<id>/votar/` | Registrar voto (requiere sesión) |
 | GET | `/votaciones/<id>/resultados/` | Conteo y porcentajes |
-| GET | `/accounts/login/` | Inicio de sesión |
+| GET | `/accounts/login/` | Inicio de sesión (correo, usuario o documento) |
+| POST | `/accounts/logout/` | Cierre de sesión (por POST, con CSRF) |
 | GET | `/registro/` | Crear cuenta de votante |
+| GET | `/cuenta/password/` | Cambiar contraseña (requiere sesión) |
 | — | `/admin/` | Panel de administración |
+
+## Usuarios de prueba
+
+Credenciales idénticas a las del prototipo del front
+(`front/src/lib/data.js`). Se cargan con
+`python manage.py cargar_usuarios_demo` (idempotente) y las claves se
+restablecen con `--reset-passwords`.
+
+| Rol | Nombre | Documento | Correo | Clave |
+|---|---|---|---|---|
+| Administrador | Laura Restrepo | `100200300` | laura.restrepo@uni.edu.co | `admin123` |
+| Organizador | Andrés Catalán | `100200301` | andres.catalan@uni.edu.co | `org123` |
+| Votante | Cardina Rentería | `1015487962` | cardi.renteria@uni.edu.co | `voto123` |
+| Auditor | Martha Lucumí | `100200302` | martha.lucumi@uni.edu.co | `aud123` |
+| Votante | Sofía Márquez | `1015987412` | sofia.marquez@uni.edu.co | `voto123` |
+| Votante suspendido | Julián Ospina | `1023654789` | julian.ospina@uni.edu.co | `voto123` |
+
+Qué debe ver cada rol al entrar:
+
+- **Administrador**: todo el panel y la gestión completa.
+- **Organizador**: gestiona ediciones, categorías, votaciones y opciones.
+- **Votante**: el listado de ediciones, sus comprobantes y su vote.
+- **Auditor**: solo lectura de resultados y padrón.
+- **Julián Ospina** está `SUSPENDIDO`: su intento de sesión se rechaza con
+  mensaje claro.
+
+Para repetir el flujo de votación sin recargar todo:
+`python manage.py reset_demo --confirmar` borra votos y padrones conservando
+ediciones, categorías, votaciones y opciones.
 
 ## Autenticación
 
@@ -124,6 +155,14 @@ Luego abre:
   rechazado en la API y en la web.
 - El registro ya sea web o por API aplica la política de contraseñas de Django
   (`back/apps/usuarios/services.py`) y rechaza correos o documentos duplicados.
+- **Sesión (A8)**: muere al cerrar el navegador o tras 30 minutos de
+  inactividad; la casilla "Recordarme" del login la extiende a 7 días.
+- **Cambio de contraseña (A9)**: `/cuenta/password/` pide la clave actual,
+  aplica la misma política y conservar la sesión abierta.
+- **Cookies (A10)**: `HttpOnly` y `SameSite=Lax`; en producción
+  (`DEBUG=False`) se activan `Secure`, HSTS y redirección a HTTPS.
+- **Throttling (A11)**: `POST /api/usuarios/login/` acepta 5 intentos por
+  minuto y por IP; el excedente responde 429 sin bloquear otras cuentas.
 
 Reglas del flujo de voto:
 
@@ -153,8 +192,9 @@ python manage.py test
 
 Cubren creación de ediciones/votaciones/opciones, tarjetón, registro de voto,
 voto duplicado, opción de otra votación, votación cerrada, resultados,
-autenticación (correo/usuario/documento, suspendidos y bloqueo por intentos) y
-registro de cuentas.
+autenticación (correo/usuario/documento, suspendidos, bloqueo por intentos,
+throttling 429, sesión con "recordarme", logout por POST) y registro de
+cuentas.
 
 ## Migraciones
 

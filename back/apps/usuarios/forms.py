@@ -2,6 +2,7 @@
 
 from django import forms
 
+from .auth import autenticar
 from .services import crear_cuenta, validar_cuenta_libre, validar_password
 
 
@@ -56,3 +57,43 @@ class RegistroForm(forms.Form):
             correo=self.cleaned_data['correo'],
             password=self.cleaned_data['password'],
         )
+
+
+class SesionForm(forms.Form):
+    """Login por sesión: correo, usuario o documento (entregables A1 y A8)."""
+
+    identificador = forms.CharField(
+        label='Correo, usuario o documento',
+        max_length=254,
+        widget=forms.TextInput(attrs={'autofocus': True, 'autocapitalize': 'none'}),
+    )
+    password = forms.CharField(
+        label='Contraseña',
+        max_length=128,
+        strip=False,
+        widget=forms.PasswordInput(attrs={'autocomplete': 'current-password'}),
+    )
+    recordarme = forms.BooleanField(required=False, label='Recordarme')
+
+    def __init__(self, *args, request=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._request = request
+        self._user = None
+
+    def clean(self):
+        cleaned = super().clean()
+        identificador = (cleaned.get('identificador') or '').strip()
+        password = cleaned.get('password') or ''
+
+        if not identificador or not password:
+            raise forms.ValidationError('Escribe usuario (o correo/documento) y contraseña.')
+
+        user, error = autenticar(identificador, password)
+        if error:
+            raise forms.ValidationError(error)
+
+        self._user = user
+        return cleaned
+
+    def obtener_usuario(self):
+        return self._user

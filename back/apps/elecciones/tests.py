@@ -8,6 +8,10 @@ from back.apps.usuarios.models import Role, Usuario
 
 class EleccionesFlowTests(TestCase):
     def setUp(self):
+        from django.core.cache import cache
+
+        # El throttle de login vive en el cache: se limpia antes de cada clase.
+        cache.clear()
         self.client = APIClient()
         self.user_model = get_user_model()
         self.role = Role.objects.create(nombre='Organizador', descripcion='Gestor electoral')

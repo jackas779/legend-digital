@@ -5,29 +5,32 @@
 {% block content %}
   <div class="login-box">
     <h1>Ingresar</h1>
-    <p class="lead">Usa tu cuenta para emitir el voto.</p>
+    <p class="lead">Usa tu correo, usuario o documento para entrar.</p>
 
-    {% if form.errors %}
-      <p class="errors">Usuario o contraseña incorrectos.</p>
-    {% endif %}
-
-    <form method="post">
+    <form method="post" novalidate>
       {% csrf_token %}
       <input type="hidden" name="next" value="{{ next }}">
 
-      <div>
-        <label for="id_username">Usuario, correo o documento</label>
-        <input type="text" name="username" id="id_username" autofocus required>
-      </div>
+      {% for field in form.visible_fields %}
+        <div>
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% for error in field.errors %}
+            <p class="errors">{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endfor %}
 
-      <div>
-        <label for="id_password">Contraseña</label>
-        <input type="password" name="password" id="id_password" required>
-      </div>
+      {% if form.non_field_errors %}
+        {% for error in form.non_field_errors %}
+          <p class="errors">{{ error }}</p>
+        {% endfor %}
+      {% endif %}
 
       <button type="submit">Entrar</button>
     </form>
 
+    <p>Aún no tienes cuenta: <a href="{% url 'registro' %}">regístrate</a>.</p>
     <p><a href="{% url 'inicio' %}">← Volver al inicio</a></p>
   </div>
 {% endblock %}

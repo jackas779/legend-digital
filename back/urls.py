@@ -9,9 +9,8 @@ from django.urls import include, path
 urlpatterns = [
     path('admin/', admin.site.urls),
 
-    # Autenticación por sesión (login/logout) para el tarjetón MVT.
-    # Se usa el namespace 'auth' para no chocar con el nombre 'login' de la API.
-    path('accounts/', include(('django.contrib.auth.urls', 'auth'), namespace='auth')),
+    # Autenticación por sesión del sitio (login/logout del namespace 'auth').
+    path('accounts/', include('back.apps.usuarios.sesion_urls')),
 
     # API REST
     path('api/usuarios/', include('back.apps.usuarios.urls')),
