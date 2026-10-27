@@ -10,9 +10,9 @@ from back.apps.elecciones.models import Opcion, Votacion
 class PadronVotante(models.Model):
     """Habilitación y marca de participación de un usuario en una votación.
 
-    Para el MVP se apoya en el usuario de Django (``auth.User``) en lugar del
-    perfil ``usuarios.Usuario``: así un superusuario creado con
-    ``createsuperuser`` puede votar sin configurar roles adicionales.
+    Solo el rol ``Votante`` emite voto (el auditor, el organizador y el
+    administrador son autoridades del proceso y no votan). Los registros
+    de padrón corresponden por tanto a votantes con su perfil asignado.
     """
 
     usuario = models.ForeignKey(

@@ -172,7 +172,7 @@ Enforcement:
 | GET | `/` | Listado de ediciones |
 | GET | `/ediciones/<id>/` | Categorías y votaciones de la edición |
 | GET | `/votaciones/<id>/` | Tarjetón |
-| POST | `/votaciones/<id>/votar/` | Registrar voto (requiere sesión) |
+| POST | `/votaciones/<id>/votar/` | Registrar voto (**solo rol Votante**) |
 | GET | `/votaciones/<id>/resultados/` | Conteo y porcentajes (según visibilidad R2) |
 | GET | `/comprobante/<hash>/` | Comprobante de voto; sin la opción, solo el dueño |
 | GET | `/mis-votos/` | Historial del votante con sus comprobantes |
@@ -254,7 +254,12 @@ Qué debe ver cada rol al entrar:
 - **Administrador**: todo el panel y la gestión completa.
 - **Organizador**: gestiona ediciones, categorías, votaciones y opciones.
 - **Votante**: el proceso electoral, sus comprobantes y el tarjetón.
-- **Auditor**: solo lectura de resultados y padrón.
+- **Auditor**: solo lectura de resultados y padrón; **no emite voto**.
+
+Regla electoral: solo el rol **Votante** emite voto. Las autoridades del
+proceso (Administrador, Organizador y Auditor) conservan la consulta de
+resultados y padrón pero no emiten voto: el tarjetón se lo indica y el
+registro del voto lo rechaza.
 - **Julián Ospina** está `SUSPENDIDO`: su intento de sesión se rechaza con
   mensaje claro.
 

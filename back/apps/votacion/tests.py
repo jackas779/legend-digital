@@ -45,6 +45,21 @@ def crear_votacion_extra(edicion, nombre_categoria, nombre_votacion, estado='ACT
     return votacion, Opcion.objects.create(votacion=votacion, nombre=opcion, orden=1)
 
 
+def dar_rol(user, nombre='Votante'):
+    """Asigna un perfil con el rol indicado a un usuario de Django."""
+    from back.apps.usuarios.models import Role, Usuario
+
+    rol, _ = Role.objects.get_or_create(nombre=nombre)
+    return Usuario.objects.create(
+        user=user,
+        documento=f'7700{user.pk:08d}',
+        nombres=user.first_name or 'Prueba',
+        apellidos=nombre,
+        correo=f'{user.username}@test.com',
+        rol=rol,
+    )
+
+
 class OpcionesVotacionEndpointTests(APITestCase):
 
     def setUp(self):
@@ -94,6 +109,7 @@ class FlujoVotacionMVTTest(TestCase):
             username='votante',
             password='clave-segura-123',
         )
+        dar_rol(self.user)
 
     def test_inicio_lista_la_edicion(self):
         respuesta = self.client.get(reverse('inicio'))
@@ -416,6 +432,7 @@ class ResultadosVisibilidadTests(TestCase):
     def test_consolidado_por_edicion(self):
         """R3: todas las votaciones de la edición; exige resultados.ver."""
         votacion_extra = crear_votacion_extra(self.edicion, 'Letra inédita', 'Mejor letra')
+        dar_rol(self.otro)
         self.client.force_login(self.otro)
         self.client.post(
             reverse('votar', args=[self.votacion.pk]), {'opcion': self.cancion_a.pk}
@@ -607,3 +624,77 @@ class AuditoriaLogTests(TestCase):
         respuesta = self.client.get(reverse('auditoria_lista'))
         self.assertEqual(respuesta.status_code, 200)
         self.assertContains(respuesta, 'Registro de auditoría')
+
+
+class SoloVotantesEmitenVotoTests(TestCase):
+    """Regla electoral: las autoridades del proceso no emiten voto."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from django.core.management import call_command
+
+        from back.apps.usuarios.models import Role, Usuario
+
+        cache.clear()
+        call_command('cargar_permisos', stdout=io.StringIO())
+        self.edicion, self.categoria, self.votacion, self.cancion_a, self.cancion_b = (
+            crear_escenario()
+        )
+        self.user_model = get_user_model()
+        self.cuentas = {}
+        for nombre in ('Administrador', 'Organizador', 'Auditor'):
+            user = self.user_model.objects.create_user(
+                username=f'archivo-{nombre.lower()}', password='clave-test-2026'
+            )
+            rol, _ = Role.objects.get_or_create(nombre=nombre)
+            Usuario.objects.create(
+                user=user,
+                documento=f'6600{user.pk:08d}',
+                nombres=nombre,
+                apellidos='Prueba',
+                correo=f'{user.username}@test.com',
+                rol=rol,
+            )
+            self.cuentas[nombre] = user
+
+    def test_las_autoridades_no_pueden_votar(self):
+        for nombre, user in self.cuentas.items():
+            with self.subTest(rol=nombre):
+                self.client.force_login(user)
+                respuesta = self.client.post(
+                    reverse('votar', args=[self.votacion.pk]),
+                    {'opcion': self.cancion_a.pk},
+                )
+                self.assertEqual(respuesta.status_code, 302)
+                self.client.logout()
+
+        self.assertEqual(Voto.objects.count(), 0)
+        self.assertEqual(
+            PadronVotante.objects.filter(votacion=self.votacion).count(), 0
+        )
+
+    def test_tarjeton_no_muestra_formulario_a_las_autoridades(self):
+        self.client.force_login(self.cuentas['Auditor'])
+        respuesta = self.client.get(reverse('tarjeton', args=[self.votacion.pk]))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertNotContains(respuesta, 'Registrar voto')
+        self.assertContains(respuesta, 'no emite votos')
+
+    def test_el_votante_sigue_pudiendo_votar(self):
+        votante = self.user_model.objects.create_user(
+            username='votante-archivo', password='voto1234'
+        )
+        dar_rol(votante)
+        self.client.force_login(votante)
+        respuesta = self.client.post(
+            reverse('votar', args=[self.votacion.pk]),
+            {'opcion': self.cancion_a.pk},
+        )
+
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertEqual(Voto.objects.count(), 1)
+        padron = PadronVotante.objects.get(
+            usuario=votante, votacion=self.votacion
+        )
+        self.assertTrue(padron.ha_votado)

@@ -21,6 +21,12 @@
       Necesitas <a href="{% url 'auth:login' %}?next={{ request.path|urlencode }}">iniciar sesión</a>
       para votar.
     </p>
+  {% elif rol_votante == False %}
+    <p class="msg warning">
+      Tu rol ({{ rol_actual|default:"sin rol" }}) no emite votos en esta votación:
+      solo los votantes emiten voto. Puedes consultar los
+      <a href="{% url 'resultados' votacion.pk %}">resultados</a>.
+    </p>
   {% else %}
     <form method="post" action="{% url 'votar' votacion.pk %}">
       {% csrf_token %}

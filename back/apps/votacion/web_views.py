@@ -13,6 +13,12 @@ from back.apps.usuarios.permisos import requiere_permiso, tiene_permiso
 from .models import PadronVotante, Voto
 
 
+def rol_del_usuario(user):
+    """Nombre del rol del perfil del usuario (o None si no tiene perfil)."""
+    perfil = getattr(user, 'perfil_usuario', None)
+    return getattr(getattr(perfil, 'rol', None), 'nombre', None)
+
+
 def inicio(request):
     """Listado de ediciones disponibles (Festival 2027, ...)."""
     ediciones = (
@@ -61,6 +67,9 @@ def tarjeton(request, pk):
             'votacion': votacion,
             'opciones': opciones,
             'ya_voto': ya_voto,
+            # Solo el rol Votante ve el formulario; las autoridades del
+            # proceso (auditor, organizador, administrador) no emiten voto.
+            'rol_votante': rol_del_usuario(request.user) == 'Votante',
         },
     )
 
@@ -74,6 +83,17 @@ def votar(request, pk):
     if not votacion.esta_abierta:
         messages.error(request, 'Esta votación no está abierta.')
         return redirect('tarjeton', pk=pk)
+
+    # Regla electoral: solo el rol Votante emite voto. Las autoridades del
+    # proceso (auditor, organizador, administrador) conservan la consulta.
+    rol = rol_del_usuario(request.user)
+    if rol != 'Votante':
+        messages.warning(
+            request,
+            f'El rol «{rol or "sin rol"}» no emite voto; puedes consultar los '
+            'resultados cuando la votación los muestre.',
+        )
+        return redirect('resultados', pk=pk)
 
     opcion_id = request.POST.get('opcion')
     if not opcion_id:
