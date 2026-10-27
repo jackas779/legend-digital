@@ -1,8 +1,9 @@
 from django.contrib.auth import get_user_model
-from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
+from .auth import autenticar
 from .models import Permission, Role, RolPermiso, Usuario
+from .services import crear_cuenta, validar_cuenta_libre, validar_password
 
 User = get_user_model()
 
@@ -38,76 +39,45 @@ class RegisterSerializer(serializers.Serializer):
     rol_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate(self, attrs):
-        correo = attrs.get('correo')
-        documento = attrs.get('documento')
+        errores = validar_cuenta_libre(attrs.get('documento'), attrs.get('correo'))
+        if errores:
+            raise serializers.ValidationError(errores)
 
-        if User.objects.filter(email__iexact=correo).exists():
-            raise serializers.ValidationError({'correo': 'Este correo ya está registrado.'})
-        if Usuario.objects.filter(documento=documento).exists():
-            raise serializers.ValidationError({'documento': 'Este documento ya está registrado.'})
+        mensajes = validar_password(attrs.get('password'))
+        if mensajes:
+            raise serializers.ValidationError({'password': mensajes})
 
-        validate_password(attrs['password'])
         return attrs
 
     def create(self, validated_data):
-        password = validated_data.pop('password')
         rol_id = validated_data.pop('rol_id', None)
+        rol = Role.objects.filter(id=rol_id).first() if rol_id else None
 
-        username = validated_data['correo'].split('@')[0] or validated_data['documento']
-        username = username[:30]
-        username_base = username
-        counter = 1
-        while User.objects.filter(username=username).exists():
-            username = f'{username_base}{counter}'
-            counter += 1
-
-        user = User.objects.create_user(
-            username=username,
-            email=validated_data['correo'],
-            password=password,
-            first_name=validated_data['nombres'],
-            last_name=validated_data['apellidos'],
-        )
-
-        rol = None
-        if rol_id:
-            rol = Role.objects.filter(id=rol_id).first()
-        if rol is None:
-            rol, _ = Role.objects.get_or_create(nombre='Votante', defaults={'descripcion': 'Usuario común'} )
-
-        perfil = Usuario.objects.create(
-            user=user,
+        user, perfil = crear_cuenta(
             documento=validated_data['documento'],
             nombres=validated_data['nombres'],
             apellidos=validated_data['apellidos'],
             correo=validated_data['correo'],
+            password=validated_data['password'],
             rol=rol,
         )
-
         return {'user': user, 'perfil': perfil}
 
 
 class LoginSerializer(serializers.Serializer):
+    """Acepta correo, nombre de usuario o documento.
+
+    Toda la lógica (bloqueo, estado de la cuenta, conteo de fallos) vive en
+    ``back.apps.usuarios.auth`` para compartirla con el login MVT.
+    """
+
     correo = serializers.CharField(required=False, allow_blank=True)
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
-        identificador = (attrs.get('correo') or '').strip()
-        password = attrs.get('password')
-
-        if not identificador or not password:
-            raise serializers.ValidationError('Correo/usuario y contraseña son obligatorios.')
-
-        # Permite iniciar sesión con el correo o con el nombre de usuario
-        # (el admin de Django usa username, por eso "admin" también funciona).
-        user = User.objects.filter(email__iexact=identificador).first()
-        if user is None:
-            user = User.objects.filter(username__iexact=identificador).first()
-        if user is None or not user.check_password(password):
-            raise serializers.ValidationError('Credenciales inválidas.')
-
-        if not user.is_active:
-            raise serializers.ValidationError('Usuario inactivo.')
+        user, error = autenticar(attrs.get('correo'), attrs.get('password'))
+        if error:
+            raise serializers.ValidationError(error)
 
         attrs['user'] = user
         return attrs

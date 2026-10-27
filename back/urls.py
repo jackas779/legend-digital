@@ -19,6 +19,9 @@ urlpatterns = [
     path('api/votacion/', include('back.apps.votacion.urls')),
     path('api/auditoria/', include('back.apps.auditoria.urls')),
 
+    # Vistas MVT: autenticación y registro de cuentas.
+    path('', include('back.apps.usuarios.web_urls')),
+
     # Vistas MVT: Edición → Categoría → Votación → Opción → Voto
     path('', include('back.apps.votacion.web_urls')),
 ]

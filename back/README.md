@@ -109,7 +109,21 @@ Luego abre:
 | POST | `/votaciones/<id>/votar/` | Registrar voto (requiere sesión) |
 | GET | `/votaciones/<id>/resultados/` | Conteo y porcentajes |
 | GET | `/accounts/login/` | Inicio de sesión |
+| GET | `/registro/` | Crear cuenta de votante |
 | — | `/admin/` | Panel de administración |
+
+## Autenticación
+
+- Una sola lógica de acceso para el sitio y la API, en
+  `back/apps/usuarios/auth.py`, conectada como backend de Django.
+- Se puede iniciar sesión con **correo, nombre de usuario o documento**, en
+  ese orden; coincide con las cuentas de prueba del prototipo.
+- Bloqueo por intentos fallidos: 5 fallos bloquean la cuenta 15 minutos
+  (usa `intentos_fallidos` y `bloqueado_hasta` del perfil).
+- Solo entra quien esté `ACTIVO`: un perfil `SUSPENDIDO` o `INACTIVO` queda
+  rechazado en la API y en la web.
+- El registro ya sea web o por API aplica la política de contraseñas de Django
+  (`back/apps/usuarios/services.py`) y rechaza correos o documentos duplicados.
 
 Reglas del flujo de voto:
 
@@ -138,7 +152,9 @@ python manage.py test
 ```
 
 Cubren creación de ediciones/votaciones/opciones, tarjetón, registro de voto,
-voto duplicado, opción de otra votación, votación cerrada y resultados.
+voto duplicado, opción de otra votación, votación cerrada, resultados,
+autenticación (correo/usuario/documento, suspendidos y bloqueo por intentos) y
+registro de cuentas.
 
 ## Migraciones
 

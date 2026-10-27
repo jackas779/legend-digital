@@ -121,6 +121,12 @@ LOGIN_URL = 'auth:login'
 LOGIN_REDIRECT_URL = 'inicio'
 LOGOUT_REDIRECT_URL = 'inicio'
 
+# Backend propio: acepta correo, usuario o documento y aplica bloqueo por
+# intentos fallidos, igual que la API.
+AUTHENTICATION_BACKENDS = [
+    'back.apps.usuarios.auth.UsuariosBackend',
+]
+
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',

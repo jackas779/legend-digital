@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+
+{% block title %}Registro — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <div class="login-box">
+    <h1>Crear cuenta</h1>
+    <p class="lead">Regístrate para elegir una opción y emitir tu voto.</p>
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      {% for field in form.visible_fields %}
+        <div>
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+          {% for error in field.errors %}
+            <p class="errors">{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endfor %}
+
+      {% if form.non_field_errors %}
+        {% for error in form.non_field_errors %}
+          <p class="errors">{{ error }}</p>
+        {% endfor %}
+      {% endif %}
+
+      <button type="submit">Crear cuenta</button>
+    </form>
+
+    <p>
+      ¿Ya tienes cuenta?
+      <a href="{% url 'auth:login' %}?next=/">Iniciar sesión</a>
+    </p>
+  </div>
+{% endblock %}
