@@ -12,7 +12,7 @@ Festival 2027 → Música → Canción favorita del público → Canción A / B 
 ## Stack
 
 - Python 3.12
-- Django 6.1.2
+- Django 6.1.2 (ver `back/requirements.txt`)
 - SQLite (desarrollo)
 - Django Templates (MVT) + Django Admin
 - Django REST Framework + JWT (API existente, en segundo plano)
@@ -21,27 +21,34 @@ Festival 2027 → Música → Canción favorita del público → Canción A / B 
 
 ```text
 proyecto universidad/
-├── manage.py
-├── requirements.txt
-├── modelo_datos.sql
+├── preparar_windows.bat        # instalación en una máquina nueva (Windows)
+├── preparar_linux.sh           # instalación en una máquina nueva (Linux/macOS)
+├── front/                      # prototipo Vue (referencia de credenciales)
 └── back/
-    ├── settings.py              # apps, plantillas, JWT, CORS, i18n
-    ├── urls.py                  # router raíz: MVT, API y admin
+    ├── manage.py
+    ├── requirements.txt        # dependencias congeladas
+    ├── modelo_datos.sql
+    ├── settings.py             # apps, plantillas, JWT, CORS, i18n
+    ├── urls.py                 # router raíz: MVT, API y admin
     ├── wsgi.py / asgi.py
-    ├── .env.example             # variables de entorno
+    ├── .env.example            # variables de entorno
     ├── templates/
     │   ├── base.html
-    │   ├── registration/login.html
+    │   ├── gestion/            # gestione MVT de ediciones/categorías/votaciones/opciones
+    │   ├── registration/
+    │   ├── usuarios/           # registro y cambio de contraseña
     │   └── votacion/
     │       ├── inicio.html
     │       ├── edicion.html
     │       ├── tarjeton.html
-    │       └── resultados.html
+    │       ├── resultados*
+    │       ├── comprobante.html
+    │       └── mis_votos.html
     └── apps/
-        ├── usuarios/            # roles, permisos, perfil
-        ├── elecciones/          # Edición, Categoría, Votación, Opción
-        ├── votacion/            # Padrón, Voto, certificados, acta
-        └── auditoria/           # logs de eventos
+        ├── usuarios/           # roles, permisos, perfil, auth, sesión
+        ├── elecciones/         # Edición, Categoría, Votación, Opción + gestión MVT
+        ├── votacion/           # Padrón, Voto, certificados, acta
+        └── auditoria/          # logs de eventos
 ```
 
 Las apps se importan como `back.apps.<app>` porque `apps/` vive dentro del
@@ -83,24 +90,38 @@ copy back\.env.example .env
 Variables soportadas: `DJANGO_SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`.
 La base de datos es SQLite (`db.sqlite3`) y no requiere configuración.
 
-## Puesta en marcha
+## Puesta en marcha en una máquina nueva
+
+Solo se necesitan dos pasos: instalar las dependencias y ejecutar **un
+comando que prepara todo** (`migrate` + permisos + escenario demo
+(Festival 2027) + cuentas de prueba).
 
 ```bash
-python manage.py migrate
-python manage.py cargar_demo        # Festival 2027 → Música → Canción favorita
-python manage.py cargar_permisos    # catálogo de permisos y rol por defecto
-python manage.py cargar_usuarios_demo   # cuentas de prueba (tabla siguiente)
-python manage.py createsuperuser    # si aún no tienes uno
+python -m pip install -r back/requirements.txt
+python manage.py preparar
 python manage.py runserver
 ```
+
+`preparar` es idempotente: puedes ejecutarlo varias veces sin duplicar nada.
+Si prefieres solo las migraciones, sin datos de prueba, usa
+`python manage.py preparar --sin-demo`.
+
+> En una máquina nueva conviene primero crear un entorno virtual
+> (`python -m venv .venv`) y usar su `python`. En la raíz del proyecto hay
+> además dos scripts que hacen incluso ese paso por ti:
+>
+> - Windows: `preparar_windows.bat`
+> - Linux / macOS: `chmod +x preparar_linux.sh && ./preparar_linux.sh`
 
 Luego abre:
 
 - `http://localhost:8000/` — tarjetón público
 - `http://localhost:8000/admin/` — panel de administración
 
-`cargar_demo` y `cargar_permisos` son idempotentes: puedes ejecutarlos varias
-veces sin duplicar datos.
+El archivo `db.sqlite3` no se versiona (está en `.gitignore`), así que en una
+máquina nueva la base se construye desde cero al ejecutar `preparar`. Si
+quieres un superusuario propio para el admin, ejecuta después
+`python manage.py createsuperuser`.
 
 ## Roles y permisos
 
