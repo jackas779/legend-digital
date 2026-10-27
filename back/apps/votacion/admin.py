@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from back.apps.usuarios.permisos import AdminSoloLecturaMixin
+
 from .models import (
     ActaEscrutinio,
     CertificadoVotacion,
@@ -9,25 +11,21 @@ from .models import (
 
 
 @admin.register(PadronVotante)
-class PadronVotanteAdmin(admin.ModelAdmin):
+class PadronVotanteAdmin(AdminSoloLecturaMixin, admin.ModelAdmin):
+    codigo_ver = 'padron.ver'
     list_display = ('usuario', 'votacion', 'ha_votado', 'fecha_emision')
     list_filter = ('ha_votado', 'votacion')
     search_fields = ('usuario__username', 'usuario__email')
 
 
 @admin.register(Voto)
-class VotoAdmin(admin.ModelAdmin):
+class VotoAdmin(AdminSoloLecturaMixin, admin.ModelAdmin):
     """La urna es de solo lectura: un voto no se edita ni se borra desde el panel."""
 
+    codigo_ver = 'resultados.ver'
     list_display = ('id', 'opcion', 'votacion', 'fecha_registro')
     list_filter = ('opcion__votacion',)
     readonly_fields = ('id', 'opcion', 'votacion', 'fecha_registro', 'firma_criptografica')
-
-    def has_add_permission(self, request):
-        return False
-
-    def has_change_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(CertificadoVotacion)

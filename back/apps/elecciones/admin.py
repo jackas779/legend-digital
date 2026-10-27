@@ -1,5 +1,7 @@
 from django.contrib import admin
 
+from back.apps.usuarios.permisos import AdminPermisosMixin
+
 from .models import Categoria, Edicion, Normativa, Opcion, RecursoMultimedia, Votacion
 
 
@@ -23,7 +25,11 @@ class VotacionInline(admin.TabularInline):
 
 
 @admin.register(Edicion)
-class EdicionAdmin(admin.ModelAdmin):
+class EdicionAdmin(AdminPermisosMixin, admin.ModelAdmin):
+    codigo_ver = 'ediciones.ver'
+    codigo_crear = 'ediciones.crear'
+    codigo_editar = 'ediciones.editar'
+    codigo_eliminar = 'ediciones.eliminar'
     list_display = ('nombre', 'anio', 'estado', 'creador', 'fecha_creacion')
     list_filter = ('estado', 'anio')
     search_fields = ('nombre',)
@@ -31,13 +37,21 @@ class EdicionAdmin(admin.ModelAdmin):
 
 
 @admin.register(Categoria)
-class CategoriaAdmin(admin.ModelAdmin):
+class CategoriaAdmin(AdminPermisosMixin, admin.ModelAdmin):
+    codigo_ver = 'categorias.ver'
+    codigo_crear = 'categorias.crear'
+    codigo_editar = 'categorias.editar'
+    codigo_eliminar = 'categorias.eliminar'
     list_display = ('nombre',)
     search_fields = ('nombre',)
 
 
 @admin.register(Votacion)
-class VotacionAdmin(admin.ModelAdmin):
+class VotacionAdmin(AdminPermisosMixin, admin.ModelAdmin):
+    codigo_ver = 'votaciones.ver'
+    codigo_crear = 'votaciones.crear'
+    codigo_editar = 'votaciones.editar'
+    codigo_eliminar = 'votaciones.eliminar'
     list_display = (
         'nombre',
         'categoria',
@@ -53,7 +67,11 @@ class VotacionAdmin(admin.ModelAdmin):
 
 
 @admin.register(Opcion)
-class OpcionAdmin(admin.ModelAdmin):
+class OpcionAdmin(AdminPermisosMixin, admin.ModelAdmin):
+    codigo_ver = 'opciones.ver'
+    codigo_crear = 'opciones.crear'
+    codigo_editar = 'opciones.editar'
+    codigo_eliminar = 'opciones.eliminar'
     list_display = ('orden', 'nombre', 'subtitulo', 'votacion', 'es_voto_blanco')
     list_filter = ('votacion__edicion', 'votacion', 'es_voto_blanco')
     search_fields = ('nombre', 'subtitulo')
@@ -61,13 +79,21 @@ class OpcionAdmin(admin.ModelAdmin):
 
 
 @admin.register(Normativa)
-class NormativaAdmin(admin.ModelAdmin):
+class NormativaAdmin(AdminPermisosMixin, admin.ModelAdmin):
+    codigo_ver = 'votaciones.ver'
+    codigo_crear = 'votaciones.editar'
+    codigo_editar = 'votaciones.editar'
+    codigo_eliminar = 'votaciones.eliminar'
     list_display = ('titulo', 'votacion', 'fecha_publicacion')
     list_filter = ('votacion',)
     search_fields = ('titulo',)
 
 
 @admin.register(RecursoMultimedia)
-class RecursoMultimediaAdmin(admin.ModelAdmin):
+class RecursoMultimediaAdmin(AdminPermisosMixin, admin.ModelAdmin):
+    codigo_ver = 'votaciones.ver'
+    codigo_crear = 'votaciones.editar'
+    codigo_editar = 'votaciones.editar'
+    codigo_eliminar = 'votaciones.eliminar'
     list_display = ('nombre_archivo', 'tipo_mime', 'peso_bytes', 'fecha_subida')
     search_fields = ('nombre_archivo',)

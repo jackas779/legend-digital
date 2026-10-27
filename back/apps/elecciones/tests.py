@@ -5,16 +5,21 @@ from rest_framework.test import APIClient
 
 from back.apps.usuarios.models import Role, Usuario
 
+import io
+
 
 class EleccionesFlowTests(TestCase):
     def setUp(self):
         from django.core.cache import cache
+        from django.core.management import call_command
 
         # El throttle de login vive en el cache: se limpia antes de cada clase.
         cache.clear()
         self.client = APIClient()
         self.user_model = get_user_model()
         self.role = Role.objects.create(nombre='Organizador', descripcion='Gestor electoral')
+        # P2: carga el catálogo y asigna los permisos del rol Organizador.
+        call_command('cargar_permisos', stdout=io.StringIO())
         self.user = self.user_model.objects.create_user(
             username='organizador1',
             email='organizador@test.com',

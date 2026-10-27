@@ -88,6 +88,8 @@ La base de datos es SQLite (`db.sqlite3`) y no requiere configuración.
 ```bash
 python manage.py migrate
 python manage.py cargar_demo        # Festival 2027 → Música → Canción favorita
+python manage.py cargar_permisos    # catálogo de permisos y rol por defecto
+python manage.py cargar_usuarios_demo   # cuentas de prueba (tabla siguiente)
 python manage.py createsuperuser    # si aún no tienes uno
 python manage.py runserver
 ```
@@ -97,7 +99,33 @@ Luego abre:
 - `http://localhost:8000/` — tarjetón público
 - `http://localhost:8000/admin/` — panel de administración
 
-`cargar_demo` es idempotente: puedes ejecutarlo varias veces sin duplicar datos.
+`cargar_demo` y `cargar_permisos` son idempotentes: puedes ejecutarlos varias
+veces sin duplicar datos.
+
+## Roles y permisos
+
+La autorización usa los modelos `Role` / `Permission` / `RolPermiso` propios
+(no los grupos de Django). Los códigos siguen el formato `modulo.accion`
+(`ediciones.crear`, `votaciones.eliminar`, …) más `resultados.ver` y
+`padron.ver`; el catálogo completo queda visible en el admin.
+
+| Rol | Permisos |
+|---|---|
+| Administrador | Todos |
+| Organizador | CRUD de ediciones, categorías, votaciones y opciones; `resultados.ver`, `padron.ver` |
+| Votante | `resultados.ver` |
+| Auditor | `resultados.ver`, `padron.ver` |
+
+Enforcement:
+
+- **API DRF**: las escrituras de `/api/elecciones/` exigen el permiso del
+  módulo (`ediciones.crear`, `opciones.editar`, …); un votante recibe 403.
+  Solo los superusuarios evitan la verificación.
+- **Panel de Django**: cada ModelAdmin consulta los mismos códigos; el
+  Organizador ve elecciones y votación pero no usuarios ni auditoría, y la
+  urna (`Voto`) y el padrón son de solo lectura para todos.
+- Cuando exista la gestión MVT (semanas siguientes), usará el decorador
+  `@requiere_permiso(codigo)` del mismo módulo (`back/apps/usuarios/permisos.py`).
 
 ## Rutas MVT
 
@@ -193,8 +221,9 @@ python manage.py test
 Cubren creación de ediciones/votaciones/opciones, tarjetón, registro de voto,
 voto duplicado, opción de otra votación, votación cerrada, resultados,
 autenticación (correo/usuario/documento, suspendidos, bloqueo por intentos,
-throttling 429, sesión con "recordarme", logout por POST) y registro de
-cuentas.
+throttling 429, sesión con "recordarme", logout por POST), registro y gestión
+de cuentas, y permisos (catálogo idempotente, helper por rol, 403 del votante
+en escrituras, panel por rol).
 
 ## Migraciones
 

@@ -1,6 +1,7 @@
 from django.http import JsonResponse
 from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
+
+from back.apps.usuarios.permisos import TienePermiso
 
 from .models import Categoria, Edicion, Normativa, Opcion, RecursoMultimedia, Votacion
 from .serializers import (
@@ -18,7 +19,8 @@ def health_view(request):
 
 
 class EdicionListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'ediciones.crear'
     queryset = Edicion.objects.select_related('creador').all()
     serializer_class = EdicionSerializer
 
@@ -30,25 +32,29 @@ class EdicionListCreateView(generics.ListCreateAPIView):
 
 
 class EdicionDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'ediciones.editar'
     queryset = Edicion.objects.select_related('creador').all()
     serializer_class = EdicionSerializer
 
 
 class CategoriaListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'categorias.crear'
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
 
 
 class CategoriaDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'categorias.editar'
     queryset = Categoria.objects.all()
     serializer_class = CategoriaSerializer
 
 
 class VotacionListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'votaciones.crear'
     serializer_class = VotacionSerializer
 
     def get_queryset(self):
@@ -65,13 +71,15 @@ class VotacionListCreateView(generics.ListCreateAPIView):
 
 
 class VotacionDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'votaciones.editar'
     queryset = Votacion.objects.select_related('edicion', 'categoria').all()
     serializer_class = VotacionSerializer
 
 
 class NormativaListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'votaciones.editar'
     serializer_class = NormativaSerializer
 
     def get_queryset(self):
@@ -82,7 +90,8 @@ class NormativaListCreateView(generics.ListCreateAPIView):
 
 
 class OpcionListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'opciones.crear'
     serializer_class = OpcionSerializer
 
     def get_queryset(self):
@@ -94,12 +103,14 @@ class OpcionListCreateView(generics.ListCreateAPIView):
 
 
 class OpcionDetailView(generics.RetrieveUpdateDestroyAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'opciones.editar'
     queryset = Opcion.objects.select_related('votacion', 'foto_recurso').all()
     serializer_class = OpcionSerializer
 
 
 class RecursoMultimediaListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'votaciones.editar'
     queryset = RecursoMultimedia.objects.all()
     serializer_class = RecursoMultimediaSerializer

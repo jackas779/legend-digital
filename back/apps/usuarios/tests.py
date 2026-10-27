@@ -1,3 +1,5 @@
+import io
+
 from django.core.cache import cache
 from django.test import TestCase
 from django.urls import reverse
@@ -552,3 +554,222 @@ class ResetDemoTests(TestCase):
         with self.assertRaises(SystemExit):
             call_command('reset_demo')
         self.assertEqual(Voto.objects.count(), 1)
+
+
+class PermisosTests(TestCase):
+    """Entregables P1-P6: catálogo, asignación, helper, DRF y panel."""
+
+    def setUp(self):
+        from django.core.management import call_command
+
+        from back.apps.usuarios.models import Role
+
+        self.Role = Role
+        call_command('cargar_permisos', stdout=io.StringIO())
+
+    @staticmethod
+    def _usuario(rol):
+        from django.contrib.auth import get_user_model
+        from back.apps.usuarios.models import Usuario
+
+        zeros = int(rol.id)
+        user = get_user_model().objects.create_user(
+            username=f'usuario-{rol.nombre.lower()}', password='clave-test-2026'
+        )
+        perfil = Usuario.objects.create(
+            user=user,
+            documento=f'99{zeros:08d}',
+            nombres='Usuario',
+            apellidos='Prueba',
+            correo=f'{rol.nombre.lower()}@test.com',
+            rol=rol,
+        )
+        return user, perfil
+
+    def test_cargar_permisos_es_idempotente(self):
+        from django.core.management import call_command
+        from back.apps.usuarios.models import Permission, RolPermiso
+
+        total_permisos = Permission.objects.count()
+        total_asignaciones = RolPermiso.objects.count()
+
+        call_command('cargar_permisos', stdout=io.StringIO())
+
+        self.assertEqual(Permission.objects.count(), total_permisos)
+        self.assertEqual(RolPermiso.objects.count(), total_asignaciones)
+
+    def test_catalogo_los_cuatro_roles(self):
+        from back.apps.usuarios.models import RolPermiso
+
+        for nombre in ('Administrador', 'Organizador', 'Votante', 'Auditor'):
+            from back.apps.usuarios.models import Role
+
+            rol = self.Role.objects.get(nombre=nombre)
+            self.assertGreater(RolPermiso.objects.filter(rol=rol).count(), 0)
+
+    def test_tiene_permiso_por_rol(self):
+        from back.apps.usuarios.permisos import tiene_permiso
+
+        organizador, _ = self._usuario(self.Role.objects.get(nombre='Organizador'))
+        votante, _ = self._usuario(self.Role.objects.get(nombre='Votante'))
+        admin, _ = self._usuario(self.Role.objects.get(nombre='Administrador'))
+
+        self.assertTrue(tiene_permiso(organizador, 'ediciones.crear'))
+        self.assertTrue(tiene_permiso(organizador, 'resultados.ver'))
+        self.assertFalse(tiene_permiso(organizador, 'usuarios.crear'))
+
+        # El votante solo ve resultados: no puede escribir votaciones (P5).
+        self.assertFalse(tiene_permiso(votante, 'votaciones.crear'))
+        self.assertTrue(tiene_permiso(admin, 'usuarios.crear'))
+
+    def test_tiene_permiso_superusuario_y_sin_perfil(self):
+        from django.contrib.auth import get_user_model
+
+        from back.apps.usuarios.permisos import tiene_permiso
+
+        superuser = get_user_model().objects.create_superuser(
+            username='admin-test', password='clave-test-2026'
+        )
+        anexo = get_user_model().objects.create_user(
+            username='sin-perfil', password='clave-test-2026'
+        )
+        self.assertTrue(tiene_permiso(superuser, 'ediciones.crear'))
+        self.assertFalse(tiene_permiso(anexo, 'ediciones.crear'))
+        self.assertFalse(tiene_permiso(None, 'ediciones.crear'))
+
+    def test_decorador_requiere_permiso(self):
+        from django.contrib.auth.models import AnonymousUser
+        from django.http import HttpResponse
+        from django.test import RequestFactory
+
+        from back.apps.usuarios.permisos import requiere_permiso
+
+        @requiere_permiso('votaciones.crear')
+        def vista(request):
+            return HttpResponse('ok')
+
+        fabrica = RequestFactory()
+        organizador, _ = self._usuario(self.Role.objects.get(nombre='Organizador'))
+        votante, _ = self._usuario(self.Role.objects.get(nombre='Votante'))
+
+        # Anónimo: redirección al login.
+        peticion_anonima = fabrica.get('/ruta/')
+        peticion_anonima.user = AnonymousUser()
+        respuesta = vista(peticion_anonima)
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertIn('/accounts/login/', respuesta['Location'])
+
+        request_org = fabrica.get('/ruta/')
+        request_org.user = organizador
+        self.assertEqual(vista(request_org).status_code, 200)
+
+        request_vot = fabrica.get('/ruta/')
+        request_vot.user = votante
+        self.assertEqual(vista(request_vot).status_code, 403)
+
+    def test_api_votante_recibe_403_al_crear_votacion(self):
+        """P5: la escritura exige el permiso; la lectura solo sesión."""
+        votante, _ = self._usuario(self.Role.objects.get(nombre='Votante'))
+
+        api = APIClient()
+        api.force_authenticate(user=votante)
+
+        respuesta = api.post(
+            reverse('votaciones-list'),
+            {
+                'edicion': 1,
+                'categoria': 1,
+                'nombre': 'Canción favorita',
+                'fecha_apertura': '2026-01-01T00:00:00Z',
+                'fecha_cierre': '2026-12-31T23:59:59Z',
+                'estado': 'ACTIVA',
+            },
+            format='json',
+        )
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_api_organizador_puede_crear_votacion(self):
+        organizador, _ = self._usuario(self.Role.objects.get(nombre='Organizador'))
+
+        from back.apps.elecciones.models import Categoria, Edicion
+
+        edicion = Edicion.objects.create(nombre='Festival', anio=2027)
+        categoria = Categoria.objects.create(nombre='Música')
+
+        api = APIClient()
+        api.force_authenticate(user=organizador)
+
+        respuesta = api.post(
+            reverse('votaciones-list'),
+            {
+                'edicion': edicion.id,
+                'categoria': categoria.id,
+                'nombre': 'Canción favorita',
+                'fecha_apertura': '2026-01-01T00:00:00Z',
+                'fecha_cierre': '2026-12-31T23:59:59Z',
+                'estado': 'ACTIVA',
+            },
+            format='json',
+        )
+        self.assertEqual(respuesta.status_code, 201)
+
+    def test_admin_por_rol(self):
+        """P6: el Organizador ve elecciones/votación; no usuarios ni auditoría."""
+        from django.contrib import admin as admin_site
+        from django.test import RequestFactory
+
+        from back.apps.elecciones.admin import EdicionAdmin
+        from back.apps.elecciones.models import Edicion
+        from back.apps.usuarios.admin import UsuarioAdmin
+        from back.apps.usuarios.models import Usuario
+
+        organizador, _ = self._usuario(self.Role.objects.get(nombre='Organizador'))
+
+        fabrica = RequestFactory()
+        request_organizador = fabrica.get('/')
+        request_organizador.user = organizador
+
+        edicion_admin = EdicionAdmin(Edicion, admin_site.site)
+        usuario_admin = UsuarioAdmin(Usuario, admin_site.site)
+
+        # Organizador: ve elecciones, no usuarios.
+        self.assertTrue(edicion_admin.has_module_permission(request_organizador))
+        self.assertTrue(edicion_admin.has_add_permission(request_organizador))
+        self.assertFalse(usuario_admin.has_module_permission(request_organizador))
+
+        # Votante: no ve nada del panel (y ademas no es is_staff).
+        votante, _ = self._usuario(self.Role.objects.get(nombre='Votante'))
+        request_votante = fabrica.get('/')
+        request_votante.user = votante
+        self.assertFalse(edicion_admin.has_module_permission(request_votante))
+        self.assertFalse(usuario_admin.has_module_permission(request_votante))
+
+    def test_admin_voto_y_padron_solo_lectura(self):
+        from django.contrib import admin as admin_site
+        from django.test import RequestFactory
+
+        from back.apps.votacion.admin import PadronVotanteAdmin, VotoAdmin
+        from back.apps.votacion.models import PadronVotante, Voto
+
+        auditor, _ = self._usuario(self.Role.objects.get(nombre='Auditor'))
+        request_auditor = RequestFactory().get('/')
+        request_auditor.user = auditor
+
+        self.assertTrue(
+            VotoAdmin(Voto, admin_site.site).has_module_permission(request_auditor)
+        )
+        self.assertTrue(
+            PadronVotanteAdmin(PadronVotante, admin_site.site).has_module_permission(
+                request_auditor
+            )
+        )
+        # Solo lectura: aunque tuviera el código, la urna no se escribe.
+        self.assertFalse(
+            VotoAdmin(Voto, admin_site.site).has_add_permission(request_auditor)
+        )
+        self.assertFalse(
+            PadronVotanteAdmin(PadronVotante, admin_site.site).has_delete_permission(
+                request_auditor
+            )
+        )
+
