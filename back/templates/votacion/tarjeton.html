@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ votacion.nombre }} — Tarjetón{% endblock %}
+
+{% block content %}
+  <h1>{{ votacion.nombre }}</h1>
+  <p class="lead">
+    {{ votacion.edicion }} · {{ votacion.categoria }}
+    <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
+  </p>
+
+  {% if votacion.descripcion %}<p>{{ votacion.descripcion }}</p>{% endif %}
+
+  {% if ya_voto %}
+    <p class="msg success">Ya registraste tu voto en esta votación.</p>
+    <a class="button" href="{% url 'resultados' votacion.pk %}">Ver resultados</a>
+  {% elif not votacion.esta_abierta %}
+    <p class="msg warning">Esta votación no está abierta en este momento.</p>
+  {% elif not user.is_authenticated %}
+    <p class="msg info">
+      Necesitas <a href="{% url 'auth:login' %}?next={{ request.path|urlencode }}">iniciar sesión</a>
+      para votar.
+    </p>
+  {% else %}
+    <form method="post" action="{% url 'votar' votacion.pk %}">
+      {% csrf_token %}
+      {% for opcion in opciones %}
+        <label class="option">
+          <input type="radio" name="opcion" value="{{ opcion.pk }}" required>
+          <span class="num">{{ opcion.orden }}</span>
+          <span>
+            <strong>{{ opcion.nombre }}</strong>
+            {% if opcion.subtitulo %}<span class="sub"> — {{ opcion.subtitulo }}</span>{% endif %}
+            {% if opcion.es_voto_blanco %}<span class="sub">(voto en blanco)</span>{% endif %}
+          </span>
+        </label>
+      {% empty %}
+        <p class="empty">Esta votación no tiene opciones cargadas.</p>
+      {% endfor %}
+
+      {% if opciones %}
+        <p><button type="submit">Registrar voto</button></p>
+      {% endif %}
+    </form>
+  {% endif %}
+
+  <p>
+    <a href="{% url 'edicion-detalle' votacion.edicion.pk %}">← Volver a la edición</a>
+    · <a href="{% url 'resultados' votacion.pk %}">Resultados</a>
+  </p>
+{% endblock %}

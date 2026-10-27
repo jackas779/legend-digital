@@ -8,7 +8,6 @@ from .views import (
     NormativaListCreateView,
     OpcionDetailView,
     OpcionListCreateView,
-    OpcionVotacionListCreateView,
     RecursoMultimediaListCreateView,
     VotacionDetailView,
     VotacionListCreateView,
@@ -28,7 +27,6 @@ urlpatterns = [
     path('votaciones/<int:pk>/', VotacionDetailView.as_view(), name='votaciones-detail'),
 
     path('votaciones/<int:votacion_id>/normativas/', NormativaListCreateView.as_view(), name='normativas-list'),
-    path('votaciones/<int:votacion_id>/opciones/', OpcionVotacionListCreateView.as_view(), name='opciones-votacion-list'),
 
     path('opciones/', OpcionListCreateView.as_view(), name='opciones-list'),
     path('opciones/<int:pk>/', OpcionDetailView.as_view(), name='opciones-detail'),

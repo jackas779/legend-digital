@@ -57,16 +57,6 @@ Crear la base del backend en Django para soportar la lógica de negocio del proy
 - Cierre de elección, actas y resultado final.
 - Dashboards de auditoría y consistencia.
 
-### Fase 3 — Votación y certificados
-- Registro de participación por usuario y categoría.
-- Emisión de votos anónimos en urna digital.
-- Generación de comprobantes, certificados QR y hash.
-
-### Fase 4 — Auditoría y cierre
-- Logs inalterables.
-- Cierre de elección, actas y resultado final.
-- Dashboards de auditoría y consistencia.
-
 ## 5. Alineación con el contexto
 
 Esta base se apoya en:

@@ -1,8 +1,9 @@
 from django.db import models
+from django.utils import timezone
 
 
 class Edicion(models.Model):
-    """Agrupa un proceso electoral completo (por ejemplo, Elecciones 2026)."""
+    """Agrupa un proceso electoral completo (por ejemplo, Festival 2027)."""
 
     ESTADOS = [
         ('BORRADOR', 'Borrador'),
@@ -29,13 +30,26 @@ class Edicion(models.Model):
         ordering = ['-anio', 'nombre']
         verbose_name = 'edición'
         verbose_name_plural = 'ediciones'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['nombre', 'anio'],
+                name='uq_edicion_nombre_anio',
+            ),
+        ]
 
     def __str__(self):
+        # Evita "Festival 2027 2027" cuando el nombre ya incluye el año.
+        if str(self.anio) in self.nombre:
+            return self.nombre
         return f'{self.nombre} {self.anio}'.strip()
+
+    @property
+    def esta_activa(self):
+        return self.estado == 'ACTIVA'
 
 
 class Categoria(models.Model):
-    """Temática reutilizable de una votación (Alcaldía, Consejo, etc.)."""
+    """Temática reutilizable entre ediciones (Música, Deportes, etc.)."""
 
     nombre = models.CharField(max_length=150, unique=True)
     descripcion = models.TextField(blank=True, null=True)
@@ -51,12 +65,17 @@ class Categoria(models.Model):
 
 
 class Votacion(models.Model):
-    """Votación concreta de una categoría dentro de una edición."""
+    """Votación concreta de una categoría dentro de una edición.
+
+    Ejemplo: Festival 2027 → Música → "Canción favorita del público".
+    """
 
     ESTADOS = Edicion.ESTADOS
 
     edicion = models.ForeignKey(Edicion, on_delete=models.CASCADE, related_name='votaciones')
     categoria = models.ForeignKey(Categoria, on_delete=models.PROTECT, related_name='votaciones')
+    nombre = models.CharField(max_length=150)
+    descripcion = models.TextField(blank=True, null=True)
     fecha_apertura = models.DateTimeField()
     fecha_cierre = models.DateTimeField()
     estado = models.CharField(max_length=20, choices=ESTADOS, default='BORRADOR')
@@ -67,17 +86,50 @@ class Votacion(models.Model):
         ordering = ['-fecha_apertura']
         verbose_name = 'votación'
         verbose_name_plural = 'votaciones'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['edicion', 'categoria', 'nombre'],
+                name='uq_votacion_titulo',
+            ),
+        ]
 
     def __str__(self):
-        return f'{self.categoria} · {self.edicion}'
+        return self.nombre
+
+    @property
+    def titulo(self):
+        return f'{self.nombre} · {self.edicion}'
+
+    @property
+    def esta_abierta(self):
+        ahora = timezone.now()
+        return (
+            self.estado == 'ACTIVA'
+            and self.fecha_apertura <= ahora <= self.fecha_cierre
+        )
+
+    @property
+    def total_votos(self):
+        return self.opciones.aggregate(total=models.Count('votos'))['total'] or 0
 
 
 class Opcion(models.Model):
-    """Persona, lista o alternativa que puede participar en votaciones."""
+    """Alternativa que se puede votar dentro de una votación.
 
+    Ejemplo: Canción A, Canción B, Canción C.
+    """
+
+    votacion = models.ForeignKey(Votacion, on_delete=models.CASCADE, related_name='opciones')
     nombre = models.CharField(max_length=150)
-    identificador_unico = models.CharField(max_length=100, unique=True)
-    biografia = models.TextField(blank=True, null=True)
+    subtitulo = models.CharField(
+        max_length=150,
+        blank=True,
+        null=True,
+        help_text='Artista, lista o partido que acompaña a la opción.',
+    )
+    descripcion = models.TextField(blank=True, null=True)
+    orden = models.PositiveIntegerField(help_text='Número de casilla en el tarjetón.')
+    es_voto_blanco = models.BooleanField(default=False)
     foto_recurso = models.ForeignKey(
         'RecursoMultimedia',
         on_delete=models.SET_NULL,
@@ -89,43 +141,22 @@ class Opcion(models.Model):
 
     class Meta:
         db_table = 'opciones'
-        ordering = ['nombre']
+        ordering = ['orden', 'nombre']
         verbose_name = 'opción'
         verbose_name_plural = 'opciones'
-
-    def __str__(self):
-        return self.nombre
-
-
-class OpcionVotacion(models.Model):
-    """Casilla del tarjetón: una opción participando en una votación."""
-
-    votacion = models.ForeignKey(Votacion, on_delete=models.CASCADE, related_name='opciones')
-    opcion = models.ForeignKey(Opcion, on_delete=models.CASCADE, related_name='participaciones')
-    numero_casilla = models.PositiveIntegerField()
-    es_voto_blanco = models.BooleanField(default=False)
-    # Dato de presentación propio de la candidatura (la misma persona puede
-    # presentarse con una lista distinta en otra votación).
-    partido_lista = models.CharField(max_length=120, blank=True, null=True)
-
-    class Meta:
-        db_table = 'opciones_votacion'
-        ordering = ['numero_casilla']
-        verbose_name = 'opción de votación'
-        verbose_name_plural = 'opciones de votación'
         constraints = [
             models.UniqueConstraint(
-                fields=['votacion', 'numero_casilla'],
+                fields=['votacion', 'orden'],
                 name='uq_votacion_casilla',
-            ),
-            models.UniqueConstraint(
-                fields=['votacion', 'opcion'],
-                name='uq_votacion_opcion',
             ),
         ]
 
     def __str__(self):
-        return f'{self.opcion} ({self.votacion})'
+        return self.nombre
+
+    @property
+    def total_votos(self):
+        return self.votos.count()
 
 
 class Normativa(models.Model):

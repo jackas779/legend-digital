@@ -1,15 +1,25 @@
+import hashlib
 import uuid
 
+from django.conf import settings
 from django.db import models
 
-from back.apps.elecciones.models import OpcionVotacion, Votacion
-from back.apps.usuarios.models import Usuario
+from back.apps.elecciones.models import Opcion, Votacion
 
 
 class PadronVotante(models.Model):
-    """Habilitación y marca de participación de un usuario en una votación."""
+    """Habilitación y marca de participación de un usuario en una votación.
 
-    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='padrones')
+    Para el MVP se apoya en el usuario de Django (``auth.User``) en lugar del
+    perfil ``usuarios.Usuario``: así un superusuario creado con
+    ``createsuperuser`` puede votar sin configurar roles adicionales.
+    """
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='padrones',
+    )
     votacion = models.ForeignKey(Votacion, on_delete=models.CASCADE, related_name='padron')
     ha_votado = models.BooleanField(default=False)
     fecha_emision = models.DateTimeField(auto_now_add=True)
@@ -30,6 +40,42 @@ class PadronVotante(models.Model):
         return f'{self.usuario} → {self.votacion}'
 
 
+class Voto(models.Model):
+    """Voto anónimo: no tiene ninguna referencia a la identidad del votante.
+
+    La votación se deriva de la opción, de modo que no es posible registrar un
+    voto en una votación usando una opción de otra.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    opcion = models.ForeignKey(Opcion, on_delete=models.CASCADE, related_name='votos')
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+    firma_criptografica = models.CharField(max_length=256, blank=True, default='')
+
+    class Meta:
+        db_table = 'votos'
+        ordering = ['-fecha_registro']
+        verbose_name = 'voto'
+        verbose_name_plural = 'votos'
+
+    def __str__(self):
+        return f'Voto {self.id} → {self.opcion}'
+
+    @property
+    def votacion(self):
+        return self.opcion.votacion
+
+    def calcular_firma(self):
+        contenido = f'{self.id}:{self.opcion_id}:{self.fecha_registro.isoformat()}'
+        return hashlib.sha256(contenido.encode('utf-8')).hexdigest()
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.firma_criptografica:
+            self.firma_criptografica = self.calcular_firma()
+            super().save(update_fields=['firma_criptografica'])
+
+
 class CertificadoVotacion(models.Model):
     padron = models.OneToOneField(
         PadronVotante,
@@ -47,29 +93,6 @@ class CertificadoVotacion(models.Model):
 
     def __str__(self):
         return self.codigo_certificado
-
-
-class VotoUrna(models.Model):
-    """Voto anónimo: no tiene ninguna referencia a la identidad del votante."""
-
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    votacion = models.ForeignKey(Votacion, on_delete=models.CASCADE, related_name='votos_urna')
-    opcion_votacion = models.ForeignKey(
-        OpcionVotacion,
-        on_delete=models.CASCADE,
-        related_name='votos_urna',
-    )
-    fecha_registro = models.DateTimeField(auto_now_add=True)
-    firma_criptografica = models.CharField(max_length=256)
-
-    class Meta:
-        db_table = 'votos_urna'
-        ordering = ['-fecha_registro']
-        verbose_name = 'voto en urna'
-        verbose_name_plural = 'votos en urna'
-
-    def __str__(self):
-        return f'Voto {self.id} en {self.votacion}'
 
 
 class ActaEscrutinio(models.Model):

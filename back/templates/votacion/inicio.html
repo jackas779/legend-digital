@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+
+{% block title %}Ediciones — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <h1>Ediciones</h1>
+  <p class="lead">Selecciona una edición para ver sus categorías y votaciones.</p>
+
+  {% for edicion in ediciones %}
+    <a class="card" href="{% url 'edicion-detalle' edicion.pk %}">
+      <strong>{{ edicion }}</strong>
+      <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
+      <div class="meta">
+        {{ edicion.votaciones.count }} votación{{ edicion.votaciones.count|pluralize:"es" }}
+      </div>
+    </a>
+  {% empty %}
+    <p class="empty">Todavía no hay ediciones creadas.</p>
+    <p>Créalas desde el <a href="{% url 'admin:index' %}">panel de administración</a>.</p>
+  {% endfor %}
+{% endblock %}

@@ -5,7 +5,6 @@ from .models import (
     Edicion,
     Normativa,
     Opcion,
-    OpcionVotacion,
     RecursoMultimedia,
     Votacion,
 )
@@ -35,7 +34,8 @@ class CategoriaSerializer(serializers.ModelSerializer):
 class VotacionSerializer(serializers.ModelSerializer):
     edicion_nombre = serializers.CharField(source='edicion.nombre', read_only=True)
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
-    titulo = serializers.SerializerMethodField()
+    titulo = serializers.ReadOnlyField()
+    total_votos = serializers.ReadOnlyField()
 
     class Meta:
         model = Votacion
@@ -45,77 +45,54 @@ class VotacionSerializer(serializers.ModelSerializer):
             'edicion_nombre',
             'categoria',
             'categoria_nombre',
+            'nombre',
             'titulo',
+            'descripcion',
             'fecha_apertura',
             'fecha_cierre',
             'estado',
             'mostrar_resultados_en_vivo',
+            'total_votos',
         ]
         read_only_fields = ['id']
-
-    def get_titulo(self, obj):
-        return f'{obj.categoria.nombre} · {obj.edicion.nombre}'
 
 
 class OpcionSerializer(serializers.ModelSerializer):
     foto_recurso_detalle = RecursoMultimediaSerializer(source='foto_recurso', read_only=True)
+    total_votos = serializers.ReadOnlyField()
 
     class Meta:
         model = Opcion
         fields = [
             'id',
+            'votacion',
             'nombre',
-            'identificador_unico',
-            'biografia',
+            'subtitulo',
+            'descripcion',
+            'orden',
+            'es_voto_blanco',
             'foto_recurso',
             'foto_recurso_detalle',
+            'total_votos',
             'fecha_registro',
         ]
         read_only_fields = ['id', 'fecha_registro']
-
-
-class OpcionVotacionSerializer(serializers.ModelSerializer):
-    opcion_detalle = OpcionSerializer(source='opcion', read_only=True)
-
-    class Meta:
-        model = OpcionVotacion
-        fields = [
-            'id',
-            'votacion',
-            'opcion',
-            'opcion_detalle',
-            'numero_casilla',
-            'es_voto_blanco',
-            'partido_lista',
-        ]
-        read_only_fields = ['id', 'votacion']
+        # La validación de casilla única se hace en validate() para devolver el
+        # error sobre el campo 'orden' en lugar de non_field_errors.
+        validators = []
 
     def validate(self, attrs):
-        votacion_id = self.context.get('votacion_id')
-        if votacion_id is None:
-            view = self.context.get('view')
-            if view is not None:
-                votacion_id = view.kwargs.get('votacion_id')
+        votacion = attrs.get('votacion', getattr(self.instance, 'votacion', None))
+        orden = attrs.get('orden', getattr(self.instance, 'orden', None))
 
-        if votacion_id is None:
-            return attrs
-
-        existentes = OpcionVotacion.objects.filter(votacion_id=votacion_id)
-        if self.instance is not None:
-            existentes = existentes.exclude(pk=self.instance.pk)
-
-        numero_casilla = attrs.get('numero_casilla', getattr(self.instance, 'numero_casilla', None))
-        opcion = attrs.get('opcion', getattr(self.instance, 'opcion', None))
-
-        if numero_casilla is not None and existentes.filter(numero_casilla=numero_casilla).exists():
-            raise serializers.ValidationError({
-                'numero_casilla': 'Ya existe una casilla con ese número en esta votación.'
-            })
-
-        if opcion is not None and existentes.filter(opcion=opcion).exists():
-            raise serializers.ValidationError({
-                'opcion': 'Esta opción ya participa en la votación.'
-            })
+        if votacion is not None and orden is not None:
+            existentes = Opcion.objects.filter(votacion=votacion, orden=orden)
+            if self.instance is not None:
+                existentes = existentes.exclude(pk=self.instance.pk)
+            if existentes.exists():
+                raise serializers.ValidationError({
+                    'orden': 'Ya existe una casilla con ese número en esta votación.'
+                })
 
         return attrs
 

@@ -2,13 +2,12 @@ from django.http import JsonResponse
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 
-from .models import Categoria, Edicion, Normativa, Opcion, OpcionVotacion, RecursoMultimedia, Votacion
+from .models import Categoria, Edicion, Normativa, Opcion, RecursoMultimedia, Votacion
 from .serializers import (
     CategoriaSerializer,
     EdicionSerializer,
     NormativaSerializer,
     OpcionSerializer,
-    OpcionVotacionSerializer,
     RecursoMultimediaSerializer,
     VotacionSerializer,
 )
@@ -84,27 +83,20 @@ class NormativaListCreateView(generics.ListCreateAPIView):
 
 class OpcionListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
-    queryset = Opcion.objects.select_related('foto_recurso').all()
     serializer_class = OpcionSerializer
+
+    def get_queryset(self):
+        queryset = Opcion.objects.select_related('votacion', 'foto_recurso').all()
+        votacion_id = self.request.query_params.get('votacion')
+        if votacion_id:
+            queryset = queryset.filter(votacion_id=votacion_id)
+        return queryset
 
 
 class OpcionDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated]
-    queryset = Opcion.objects.select_related('foto_recurso').all()
+    queryset = Opcion.objects.select_related('votacion', 'foto_recurso').all()
     serializer_class = OpcionSerializer
-
-
-class OpcionVotacionListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
-    serializer_class = OpcionVotacionSerializer
-
-    def get_queryset(self):
-        return OpcionVotacion.objects.filter(
-            votacion_id=self.kwargs['votacion_id']
-        ).select_related('opcion', 'opcion__foto_recurso').order_by('numero_casilla')
-
-    def perform_create(self, serializer):
-        serializer.save(votacion_id=self.kwargs['votacion_id'])
 
 
 class RecursoMultimediaListCreateView(generics.ListCreateAPIView):

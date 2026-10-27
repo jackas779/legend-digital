@@ -35,25 +35,26 @@ class EleccionesFlowTests(TestCase):
     def _crear_edicion(self):
         return self.client.post(
             reverse('ediciones-list'),
-            {'nombre': 'Elecciones 2026', 'anio': 2026, 'estado': 'BORRADOR'},
+            {'nombre': 'Festival 2027', 'anio': 2027, 'estado': 'BORRADOR'},
             format='json',
         )
 
-    def _crear_categoria(self, nombre='Consejo Estudiantil'):
+    def _crear_categoria(self, nombre='Música'):
         return self.client.post(
             reverse('categorias-list'),
             {'nombre': nombre, 'descripcion': 'Categoría de prueba'},
             format='json',
         )
 
-    def _crear_votacion(self, edicion_id, categoria_id):
+    def _crear_votacion(self, edicion_id, categoria_id, nombre='Canción favorita del público'):
         return self.client.post(
             reverse('votaciones-list'),
             {
                 'edicion': edicion_id,
                 'categoria': categoria_id,
-                'fecha_apertura': '2026-11-01T10:00:00Z',
-                'fecha_cierre': '2026-11-02T18:00:00Z',
+                'nombre': nombre,
+                'fecha_apertura': '2027-11-01T10:00:00Z',
+                'fecha_cierre': '2027-11-02T18:00:00Z',
                 'estado': 'BORRADOR',
                 'mostrar_resultados_en_vivo': False,
             },
@@ -64,15 +65,15 @@ class EleccionesFlowTests(TestCase):
         response = self._crear_edicion()
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['nombre'], 'Elecciones 2026')
-        self.assertEqual(response.data['anio'], 2026)
+        self.assertEqual(response.data['nombre'], 'Festival 2027')
+        self.assertEqual(response.data['anio'], 2027)
         self.assertEqual(response.data['creador'], self.perfil.id)
 
     def test_crear_categoria(self):
         response = self._crear_categoria()
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['nombre'], 'Consejo Estudiantil')
+        self.assertEqual(response.data['nombre'], 'Música')
 
     def test_crear_votacion_con_edicion_y_categoria(self):
         edicion = self._crear_edicion()
@@ -83,10 +84,29 @@ class EleccionesFlowTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(
             response.data['titulo'],
-            'Consejo Estudiantil · Elecciones 2026',
+            'Canción favorita del público · Festival 2027',
         )
+        self.assertEqual(response.data['nombre'], 'Canción favorita del público')
         self.assertEqual(response.data['edicion'], edicion.data['id'])
         self.assertEqual(response.data['categoria'], categoria.data['id'])
+
+    def test_votacion_exige_nombre(self):
+        edicion = self._crear_edicion()
+        categoria = self._crear_categoria()
+
+        response = self.client.post(
+            reverse('votaciones-list'),
+            {
+                'edicion': edicion.data['id'],
+                'categoria': categoria.data['id'],
+                'fecha_apertura': '2027-11-01T10:00:00Z',
+                'fecha_cierre': '2027-11-02T18:00:00Z',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('nombre', response.data)
 
     def test_crear_normativa_y_opcion_de_votacion(self):
         edicion = self._crear_edicion()
@@ -105,55 +125,34 @@ class EleccionesFlowTests(TestCase):
         opcion = self.client.post(
             reverse('opciones-list'),
             {
-                'nombre': 'Juan Pérez',
-                'identificador_unico': 'juan-perez',
-                'biografia': 'Candidato de prueba',
+                'votacion': votacion_id,
+                'nombre': 'Canción A',
+                'subtitulo': 'Artista A',
+                'orden': 1,
             },
             format='json',
         )
         self.assertEqual(opcion.status_code, 201)
+        self.assertEqual(opcion.data['nombre'], 'Canción A')
+        self.assertEqual(opcion.data['orden'], 1)
 
-        opcion_votacion = self.client.post(
-            reverse('opciones-votacion-list', kwargs={'votacion_id': votacion_id}),
-            {
-                'opcion': opcion.data['id'],
-                'numero_casilla': 1,
-                'es_voto_blanco': False,
-                'partido_lista': 'Lista A',
-            },
-            format='json',
-        )
-        self.assertEqual(opcion_votacion.status_code, 201)
-        self.assertEqual(opcion_votacion.data['opcion_detalle']['nombre'], 'Juan Pérez')
-        self.assertEqual(opcion_votacion.data['numero_casilla'], 1)
-
-    def test_no_permite_dos_casillas_con_el_mismo_numero(self):
+    def test_no_permite_dos_opciones_con_la_misma_casilla(self):
         edicion = self._crear_edicion()
         categoria = self._crear_categoria()
         votacion = self._crear_votacion(edicion.data['id'], categoria.data['id'])
         votacion_id = votacion.data['id']
 
-        opcion_1 = self.client.post(
-            reverse('opciones-list'),
-            {'nombre': 'Opción 1', 'identificador_unico': 'opcion-1'},
-            format='json',
-        )
-        opcion_2 = self.client.post(
-            reverse('opciones-list'),
-            {'nombre': 'Opción 2', 'identificador_unico': 'opcion-2'},
-            format='json',
-        )
-
-        url = reverse('opciones-votacion-list', kwargs={'votacion_id': votacion_id})
+        url = reverse('opciones-list')
         self.client.post(
             url,
-            {'opcion': opcion_1.data['id'], 'numero_casilla': 1},
+            {'votacion': votacion_id, 'nombre': 'Canción A', 'orden': 1},
             format='json',
         )
         repetida = self.client.post(
             url,
-            {'opcion': opcion_2.data['id'], 'numero_casilla': 1},
+            {'votacion': votacion_id, 'nombre': 'Canción B', 'orden': 1},
             format='json',
         )
 
         self.assertEqual(repetida.status_code, 400)
+        self.assertIn('orden', repetida.data)

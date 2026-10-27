@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block title %}Resultados — {{ votacion.nombre }}{% endblock %}
+
+{% block content %}
+  <h1>Resultados</h1>
+  <p class="lead">{{ votacion.nombre }} · {{ votacion.edicion }} · {{ votacion.categoria }}</p>
+
+  <p><strong>{{ total }}</strong> voto{{ total|pluralize }} registrado{{ total|pluralize }}</p>
+
+  {% for opcion in opciones %}
+    <div class="bar-row">
+      <div class="bar-head">
+        <span>{{ opcion.orden }}. {{ opcion.nombre }}</span>
+        <span>{{ opcion.total }} ({{ opcion.porcentaje }}%)</span>
+      </div>
+      <div class="bar"><span style="width: {{ opcion.porcentaje }}%"></span></div>
+    </div>
+  {% empty %}
+    <p class="empty">Todavía no hay opciones ni votos.</p>
+  {% endfor %}
+
+  <p>
+    <a href="{% url 'tarjeton' votacion.pk %}">← Volver al tarjetón</a>
+    · <a href="{% url 'edicion-detalle' votacion.edicion.pk %}">Edición</a>
+  </p>
+{% endblock %}

@@ -1,26 +1,24 @@
 """
 URL configuration for back project.
 
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+Vistas MVT en la raíz, API REST bajo /api/ y panel en /admin/.
 """
 from django.contrib import admin
 from django.urls import include, path
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    # Autenticación por sesión (login/logout) para el tarjetón MVT.
+    # Se usa el namespace 'auth' para no chocar con el nombre 'login' de la API.
+    path('accounts/', include(('django.contrib.auth.urls', 'auth'), namespace='auth')),
+
+    # API REST
     path('api/usuarios/', include('back.apps.usuarios.urls')),
     path('api/elecciones/', include('back.apps.elecciones.urls')),
     path('api/votacion/', include('back.apps.votacion.urls')),
     path('api/auditoria/', include('back.apps.auditoria.urls')),
+
+    # Vistas MVT: Edición → Categoría → Votación → Opción → Voto
+    path('', include('back.apps.votacion.web_urls')),
 ]

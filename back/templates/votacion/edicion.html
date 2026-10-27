@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ edicion }} — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <h1>{{ edicion }}</h1>
+  <p class="lead">Categorías y votaciones de esta edición.</p>
+
+  {% regroup votaciones by categoria as categorias %}
+  {% for grupo in categorias %}
+    <h2>{{ grupo.grouper }}</h2>
+    {% for votacion in grupo.list %}
+      <a class="card" href="{% url 'tarjeton' votacion.pk %}">
+        <strong>{{ votacion.nombre }}</strong>
+        <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
+        <div class="meta">
+          {{ votacion.opciones.count }} opción{{ votacion.opciones.count|pluralize:"es" }}
+          · {{ votacion.total_votos }} voto{{ votacion.total_votos|pluralize }}
+        </div>
+      </a>
+    {% endfor %}
+  {% empty %}
+    <p class="empty">Esta edición todavía no tiene votaciones.</p>
+  {% endfor %}
+
+  <p><a href="{% url 'inicio' %}">← Volver a las ediciones</a></p>
+{% endblock %}

@@ -1,0 +1,178 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Sistema de Votación{% endblock %}</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --line: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #6366f1;
+      --ok: #22c55e;
+      --warn: #f59e0b;
+      --err: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    a { color: #a5b4fc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 0.9rem 1.5rem;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      flex-wrap: wrap;
+    }
+    .brand { font-weight: 700; font-size: 1.05rem; color: var(--text); }
+    .topbar nav { display: flex; align-items: center; gap: 1rem; font-size: 0.9rem; }
+    .topbar form { margin: 0; }
+    main { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+    h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
+    h2 { font-size: 1.15rem; margin: 2rem 0 0.75rem; }
+    .lead { color: var(--muted); margin: 0 0 1.5rem; }
+    .card {
+      display: block;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 1rem 1.15rem;
+      margin-bottom: 0.75rem;
+      color: var(--text);
+    }
+    .card:hover { border-color: var(--accent); text-decoration: none; }
+    .card .meta { color: var(--muted); font-size: 0.85rem; }
+    .badge {
+      display: inline-block;
+      font-size: 0.72rem;
+      padding: 0.1rem 0.5rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge.activa { color: #86efac; border-color: #166534; background: #052e16; }
+    .badge.finalizada { color: #cbd5e1; border-color: #475569; background: #0f172a; }
+    .option {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.9rem 1rem;
+      margin-bottom: 0.6rem;
+      cursor: pointer;
+    }
+    .option:hover { border-color: var(--accent); }
+    .option input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; }
+    .option .num {
+      width: 2rem;
+      height: 2rem;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+    .option .sub { color: var(--muted); font-size: 0.85rem; }
+    button, .button {
+      font: inherit;
+      background: var(--accent);
+      color: white;
+      border: 0;
+      border-radius: 8px;
+      padding: 0.65rem 1.2rem;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover, .button:hover { filter: brightness(1.1); text-decoration: none; }
+    button.ghost {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-weight: 500;
+      padding: 0.35rem 0.75rem;
+    }
+    .messages { list-style: none; padding: 0; margin: 0 0 1.5rem; }
+    .msg {
+      padding: 0.7rem 1rem;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      margin-bottom: 0.5rem;
+    }
+    .msg.success { border-color: #166534; background: #052e16; color: #bbf7d0; }
+    .msg.error { border-color: #7f1d1d; background: #2a0a0a; color: #fecaca; }
+    .msg.warning { border-color: #78350f; background: #2a1a05; color: #fde68a; }
+    .msg.info { border-color: #1e40af; background: #0a1a33; color: #bfdbfe; }
+    .bar-row { margin-bottom: 0.9rem; }
+    .bar-head { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 0.25rem; }
+    .bar { height: 10px; background: var(--bg); border-radius: 999px; overflow: hidden; }
+    .bar > span { display: block; height: 100%; background: var(--accent); }
+    .empty { color: var(--muted); font-style: italic; }
+    .inline { display: inline; }
+    .stack > * + * { margin-top: 0.75rem; }
+    .center { text-align: center; }
+    .login-box { max-width: 380px; margin: 3rem auto; }
+    .login-box form { display: grid; gap: 0.75rem; }
+    .login-box input {
+      width: 100%;
+      padding: 0.6rem 0.7rem;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--text);
+      font: inherit;
+    }
+    .login-box label { font-size: 0.85rem; color: var(--muted); }
+    .errors { color: #fecaca; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{% url 'inicio' %}">Sistema de Votación</a>
+    <nav>
+      <a href="{% url 'inicio' %}">Ediciones</a>
+      {% if user.is_authenticated %}
+        {% if user.is_staff %}<a href="{% url 'admin:index' %}">Panel admin</a>{% endif %}
+        <span class="badge">{{ user.username }}</span>
+        <form method="post" action="{% url 'auth:logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="ghost">Salir</button>
+        </form>
+      {% else %}
+        <a href="{% url 'auth:login' %}">Ingresar</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main>
+    {% if messages %}
+      <ul class="messages">
+        {% for message in messages %}
+          <li class="msg {{ message.tags }}">{{ message }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
