@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block title %}Auditoría — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <h1>Registro de auditoría</h1>
+  <p class="lead">
+    Eventos del sistema: ingresos a la cuenta, gestión electoral y emisión
+    de votos. Cada evento lleva un hash encadenado con el anterior, de modo
+    que una alteración de la tabla quedaría en evidencia. El voto se
+    registra sin la opción elegida, para no romper el secreto del voto.
+  </p>
+
+  {% if eventos %}
+    <table>
+      <thead>
+        <tr>
+          <th>Fecha y hora</th>
+          <th>Usuario</th>
+          <th>Módulo</th>
+          <th>Acción</th>
+          <th>Detalles</th>
+          <th>IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for evento in eventos %}
+          <tr>
+            <td>{{ evento.timestamp|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ evento.usuario.username|default:"sistema" }}</td>
+            <td>{{ evento.modulo }}</td>
+            <td>{{ evento.accion }}</td>
+            <td class="meta">{{ evento.detalles_json|default:"—" }}</td>
+            <td>{{ evento.ip_origen|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="empty">Todavía no hay eventos registrados.</p>
+  {% endif %}
+{% endblock %}

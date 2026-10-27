@@ -123,6 +123,21 @@ máquina nueva la base se construye desde cero al ejecutar `preparar`. Si
 quieres un superusuario propio para el admin, ejecuta después
 `python manage.py createsuperuser`.
 
+## Navegación por rol
+
+El menú del encabezado cambia según el rol de quien ingresa (igual que en
+el prototipo del front), con la sección activa resaltada. Nadie ve enlaces
+de secciones para las que no tiene permiso.
+
+| Rol | Menú |
+|---|---|
+| Votante | Inicio · Resultados · Mis votos · Mi cuenta |
+| Organizador | Ediciones · Categorías · Votaciones · Resultados · Mi cuenta |
+| Auditor | Resultados · Auditoría · Mi cuenta |
+| Administrador | Panel admin · Ediciones · Categorías · Votaciones · Resultados · Auditoría · Mi cuenta |
+
+Anónimo solo ve **Ingresar** y **Registrarse**.
+
 ## Roles y permisos
 
 La autorización usa los modelos `Role` / `Permission` / `RolPermiso` propios
@@ -135,7 +150,7 @@ La autorización usa los modelos `Role` / `Permission` / `RolPermiso` propios
 | Administrador | Todos |
 | Organizador | CRUD de ediciones, categorías, votaciones y opciones; `resultados.ver`, `padron.ver` |
 | Votante | `resultados.ver` |
-| Auditor | `resultados.ver`, `padron.ver` |
+| Auditor | `resultados.ver`, `padron.ver`, `auditoria.ver` |
 
 Enforcement:
 
@@ -167,6 +182,7 @@ Enforcement:
 | POST | `/accounts/logout/` | Cierre de sesión (por POST, con CSRF) |
 | GET | `/registro/` | Crear cuenta de votante |
 | GET | `/cuenta/password/` | Cambiar contraseña (requiere sesión) |
+| GET | `/auditoria/` | Registro de auditoría (`auditoria.ver`) |
 | GET | `/gestion/ediciones/` | Gestión de ediciones (`ediciones.ver`) |
 | POST | `/gestion/ediciones/nueva/` | Crear edición (`ediciones.crear`) |
 | POST | `/gestion/ediciones/<id>/editar/` | Editar edición (`ediciones.editar`) |
@@ -204,11 +220,40 @@ restablecen con `--reset-passwords`.
 | Votante | Sofía Márquez | `1015987412` | sofia.marquez@uni.edu.co | `voto123` |
 | Votante suspendido | Julián Ospina | `1023654789` | julian.ospina@uni.edu.co | `voto123` |
 
+Además, `simular_votacion` (incluido en `preparar`) crea **40 votantes de
+demo** con documentos `90XXXXXXXX` y clave `voto123`, y les emite votos
+hasta una participación del 80 %, repartidos de forma realista entre las
+opciones (≈45 % / 33 % / 22 %). Así el padrón muestra habilitados y
+pendientes, y resultados y auditoría traen datos desde el arranque.
+
+## Registro de auditoría (logs)
+
+Cada acción relevante queda en la tabla de auditoría
+(`logs_auditoria_eventos`), visible en **Django Admin → Auditoría** y en
+la pantalla web **/auditoria/** (rol Auditor o Administrador). Cada fila
+guarda:
+
+- **Quién**: usuario de la acción (o `sistema` para eventos automáticos).
+- **Qué**: módulo y acción (`usuarios/login`, `usuarios/login_fallido`,
+  `usuarios/registro`, `votacion/voto_emitido`, `votos_simulados`, y
+  `creada/actualizada/eliminada/publicada/finalizada/abierta/cerrada` para
+  cada módulo de gestión).
+- **Detalles**: por ejemplo la votación donde se emitió el voto. El
+  secreto del voto se respeta: el evento **nunca** incluye la opción
+  elegida.
+- **IP** de origen y fecha/hora.
+- **Hash de trazabilidad**: SHA-256 que encadena cada evento con el anterior
+  (el primero de la tabla arranca con `GENESIS`). Si alguien altera o
+  borra filas, la cadena deja de verificar y queda en evidencia.
+
+Para repetir la simulación tras un `reset_demo`: ejecuta de nuevo
+`python manage.py simular_votacion`.
+
 Qué debe ver cada rol al entrar:
 
 - **Administrador**: todo el panel y la gestión completa.
 - **Organizador**: gestiona ediciones, categorías, votaciones y opciones.
-- **Votante**: el listado de ediciones, sus comprobantes y su vote.
+- **Votante**: el proceso electoral, sus comprobantes y el tarjetón.
 - **Auditor**: solo lectura de resultados y padrón.
 - **Julián Ospina** está `SUSPENDIDO`: su intento de sesión se rechaza con
   mensaje claro.

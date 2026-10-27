@@ -26,4 +26,7 @@ urlpatterns = [
 
     # Gestión MVT: ediciones y categorías (ED1-ED4, CA1-CA3).
     path('gestion/', include('back.apps.elecciones.gestion_urls')),
+
+    # Registro de auditoría por web (rol Auditor / Administrador).
+    path('auditoria/', include('back.apps.auditoria.web_urls')),
 ]

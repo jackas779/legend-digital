@@ -36,7 +36,7 @@ def codigos_del_catalogo():
         codigo
         for modulo in catalogo().values()
         for codigo, _ in modulo
-    ] + ['resultados.ver', 'padron.ver']
+    ] + ['resultados.ver', 'padron.ver', 'auditoria.ver']
 
 
 # Asignación por rol (tabla del plan, bloque 3).
@@ -45,14 +45,14 @@ PERMISOS_POR_ROL = {
         f'{modulo}.{accion}'
         for modulo in MODULOS_CRUD
         for accion in ('ver', 'crear', 'editar', 'eliminar')
-    ],
+    ] + ['auditoria.ver'],
     'Organizador': [
         f'{modulo}.{accion}'
         for modulo in MODULOS_CRUD[:-1]
         for accion in ('ver', 'crear', 'editar', 'eliminar')
     ] + ['resultados.ver', 'padron.ver'],
     'Votante': ['resultados.ver'],
-    'Auditor': ['resultados.ver', 'padron.ver'],
+    'Auditor': ['resultados.ver', 'padron.ver', 'auditoria.ver'],
 }
 
 

@@ -143,23 +143,42 @@
     }
     .login-box label { font-size: 0.85rem; color: var(--muted); }
     .errors { color: #fecaca; font-size: 0.85rem; }
+    .topbar nav a {
+      padding: 0.25rem 0.2rem;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+    }
+    .topbar nav a:hover { color: var(--text); }
+    .topbar nav a.activo { color: var(--text); border-bottom-color: var(--accent); }
+    .rol-badge {
+      border-color: var(--accent);
+      color: #c7d2fe;
+      background: #1a1f3d;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+    td.meta { color: var(--muted); }
   </style>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="{% url 'inicio' %}">Sistema de Votación</a>
+    <a class="brand" href="{% url 'inicio' %}">🗳️ Sistema de Votación</a>
     <nav>
-      <a href="{% url 'inicio' %}">Ediciones</a>
       {% if user.is_authenticated %}
-        <a href="{% url 'mis_votos' %}">Mis votos</a>
-        {% if user.is_staff %}<a href="{% url 'admin:index' %}">Panel admin</a>{% endif %}
-        <span class="badge">{{ user.username }}</span>
+        {% for item in menu_navegacion %}
+          <a href="{{ item.url }}" {% if item.activo %}class="activo"{% endif %}>{{ item.etiqueta }}</a>
+        {% endfor %}
+        <span class="badge rol-badge">{{ rol_actual|default:user.username }}</span>
         <form method="post" action="{% url 'auth:logout' %}">
           {% csrf_token %}
           <button type="submit" class="ghost">Salir</button>
         </form>
       {% else %}
         <a href="{% url 'auth:login' %}">Ingresar</a>
+        <a href="{% url 'registro' %}">Registrarse</a>
       {% endif %}
     </nav>
   </header>

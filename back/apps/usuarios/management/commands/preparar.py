@@ -12,9 +12,9 @@ from django.core.management.base import BaseCommand
 class Command(BaseCommand):
     help = (
         'Prepara la aplicación: aplica migraciones, carga el catálogo de '
-        'permisos, el escenario de demo (Festival 2027) y las cuentas de '
-        'prueba. Es idempotente: puedes ejecutarlo tantas veces como '
-        'quieras sin duplicar datos.'
+        'permisos, el escenario de demo (Festival 2027), las cuentas de '
+        'prueba y votos simulados. Es idempotente: puedes ejecutarlo '
+        'tantas veces como quieras sin duplicar datos.'
     )
 
     def add_arguments(self, parser):
@@ -43,6 +43,9 @@ class Command(BaseCommand):
         self.stdout.write('Cuentas de prueba...')
         call_command('cargar_usuarios_demo')
 
+        self.stdout.write('Datos de votación simulados...')
+        call_command('simular_votacion')
+
         self.stdout.write('')
         self.stdout.write(self.style.SUCCESS(
             'Aplicación preparada. Cuentas de prueba:'
@@ -51,6 +54,7 @@ class Command(BaseCommand):
         self.stdout.write('  Organizador    100200301 / org123')
         self.stdout.write('  Votante        1015487962 / voto123')
         self.stdout.write('  Auditor        100200302 / aud123')
+        self.stdout.write('  Votantes demo  90XXXXXXXX  / voto123 (40 cuentas)')
         self.stdout.write('')
         self.stdout.write('Para empezar:')
         self.stdout.write('  python manage.py runserver')

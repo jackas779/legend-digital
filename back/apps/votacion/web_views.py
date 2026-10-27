@@ -6,6 +6,7 @@ from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
+from back.apps.auditoria.servicio import registrar_evento
 from back.apps.elecciones.models import Edicion, Opcion, Votacion
 from back.apps.usuarios.permisos import requiere_permiso, tiene_permiso
 
@@ -97,6 +98,14 @@ def votar(request, pk):
         padron.save(update_fields=['ha_votado', 'hash_comprobante'])
 
     messages.success(request, 'Tu voto quedó registrado correctamente.')
+    # Auditoría: se deja constancia de la participación, NUNCA de la
+    # opción elegida, para conservar el secreto del voto.
+    registrar_evento(
+        request,
+        modulo='votacion',
+        accion='voto_emitido',
+        detalles={'votacion': votacion.pk, 'votacion_nombre': votacion.nombre},
+    )
     return redirect('resultados', pk=pk)
 
 

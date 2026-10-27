@@ -7,6 +7,8 @@ from django.contrib.auth.views import redirect_to_login
 from django.core.exceptions import ValidationError
 from django.shortcuts import redirect, render
 
+from back.apps.auditoria.servicio import registrar_evento
+
 from .forms import RegistroForm
 
 
@@ -26,6 +28,12 @@ def registro(request):
                     form.add_error(campo, mensaje)
         else:
             login(request, user)
+            registrar_evento(
+                request,
+                modulo='usuarios',
+                accion='registro',
+                detalles={'documento': perfil.documento},
+            )
             messages.success(
                 request,
                 f'Cuenta creada para {perfil.nombres} {perfil.apellidos}. Ya puedes votar.',
@@ -46,6 +54,7 @@ def cambiar_password(request):
         form.save()
         # La sesión no se pierde al cambiar la clave (A9).
         update_session_auth_hash(request, form.user)
+        registrar_evento(request, modulo='usuarios', accion='password_cambiado')
         messages.success(request, 'Contraseña actualizada.')
         return redirect('inicio')
 

@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 
+from back.apps.auditoria.servicio import registrar_evento
 from back.apps.usuarios.permisos import requiere_permiso, tiene_permiso
 
 from .gestion_forms import CategoriaForm, EdicionForm, OpcionForm, VotacionForm
@@ -41,6 +42,7 @@ def edicion_crear(request):
 
     if request.method == 'POST' and form.is_valid():
         edicion = form.save()
+        registrar_evento(request, 'ediciones', 'edicion_creada', {'id': edicion.id})
         messages.success(request, f'Edición «{edicion}» creada.')
         return redirect('gestion:ediciones')
 
@@ -55,6 +57,7 @@ def edicion_editar(request, edicion_id):
 
     if request.method == 'POST' and form.is_valid():
         form.save()
+        registrar_evento(request, 'ediciones', 'edicion_actualizada', {'id': edicion_id})
         messages.success(request, f'Edición «{edicion}» actualizada.')
         return redirect('gestion:ediciones')
 
@@ -83,6 +86,7 @@ def edicion_eliminar(request, edicion_id):
 
         nombre = str(edicion)
         edicion.delete()
+        registrar_evento(request, 'ediciones', 'edicion_eliminada', {'id': edicion_id})
         messages.success(request, f'Edición «{nombre}» eliminada.')
         return redirect('gestion:ediciones')
 
@@ -104,6 +108,7 @@ def edicion_publicar(request, edicion_id):
         elif edicion.estado in ('BORRADOR', 'PROGRAMADA'):
             edicion.estado = 'ACTIVA'
             edicion.save(update_fields=['estado'])
+            registrar_evento(request, 'ediciones', 'edicion_publicada', {'id': edicion_id})
             messages.success(request, f'Edición «{edicion}» publicada (ACTIVA).')
         else:
             messages.warning(request, f'La edición ya está en estado {edicion.estado}.')
@@ -122,6 +127,7 @@ def edicion_finalizar(request, edicion_id):
         else:
             edicion.estado = 'FINALIZADA'
             edicion.save(update_fields=['estado'])
+            registrar_evento(request, 'ediciones', 'edicion_finalizada', {'id': edicion_id})
             messages.success(request, f'Edición «{edicion}» finalizada.')
 
     return redirect('gestion:ediciones')
@@ -153,6 +159,7 @@ def categoria_crear(request):
 
     if request.method == 'POST' and form.is_valid():
         categoria = form.save()
+        registrar_evento(request, 'categorias', 'categoria_creada', {'id': categoria.id})
         messages.success(request, f'Categoría «{categoria.nombre}» creada.')
         return redirect('gestion:categorias')
 
@@ -167,6 +174,7 @@ def categoria_editar(request, categoria_id):
 
     if request.method == 'POST' and form.is_valid():
         form.save()
+        registrar_evento(request, 'categorias', 'categoria_actualizada', {'id': categoria_id})
         messages.success(request, f'Categoría «{categoria.nombre}» actualizada.')
         return redirect('gestion:categorias')
 
@@ -195,6 +203,7 @@ def categoria_eliminar(request, categoria_id):
 
         nombre = categoria.nombre
         categoria.delete()
+        registrar_evento(request, 'categorias', 'categoria_eliminada', {'id': categoria_id})
         messages.success(request, f'Categoría «{nombre}» eliminada.')
         return redirect('gestion:categorias')
 
@@ -249,6 +258,7 @@ def votacion_crear(request):
 
     if request.method == 'POST' and form.is_valid():
         votacion = form.save()
+        registrar_evento(request, 'votaciones', 'votacion_creada', {'id': votacion.id})
         messages.success(request, f'Votación «{votacion.nombre}» creada.')
         return redirect('gestion:votaciones')
 
@@ -267,6 +277,7 @@ def votacion_editar(request, votacion_id):
 
     if request.method == 'POST' and form.is_valid():
         form.save()
+        registrar_evento(request, 'votaciones', 'votacion_actualizada', {'id': votacion_id})
         messages.success(request, f'Votación «{votacion.nombre}» actualizada.')
         return redirect('gestion:votaciones')
 
@@ -288,6 +299,7 @@ def votacion_abrir(request, votacion_id):
         elif votacion.estado in ('BORRADOR', 'PROGRAMADA'):
             votacion.estado = 'ACTIVA'
             votacion.save(update_fields=['estado'])
+            registrar_evento(request, 'votaciones', 'votacion_abierta', {'id': votacion_id})
             messages.success(request, f'Votación «{votacion.nombre}» abierta (ACTIVA).')
         else:
             messages.warning(request, f'La votación ya está en estado {votacion.estado}.')
@@ -306,6 +318,7 @@ def votacion_cerrar(request, votacion_id):
         else:
             votacion.estado = 'FINALIZADA'
             votacion.save(update_fields=['estado'])
+            registrar_evento(request, 'votaciones', 'votacion_cerrada', {'id': votacion_id})
             total = votacion.total_votos
             messages.success(
                 request,
@@ -352,6 +365,7 @@ def opcion_crear(request, votacion_id):
         opcion = form.save(commit=False)
         opcion.votacion = votacion
         opcion.save()
+        registrar_evento(request, 'opciones', 'opcion_creada', {'id': opcion.id, 'votacion': votacion.id})
         messages.success(request, f'Opción «{opcion.nombre}» creada.')
         return redirect('gestion:opcion_lista', votacion_id=votacion.id)
 
@@ -375,6 +389,7 @@ def opcion_editar(request, votacion_id, opcion_id):
 
     if request.method == 'POST' and form.is_valid():
         form.save()
+        registrar_evento(request, 'opciones', 'opcion_actualizada', {'id': opcion_id, 'votacion': votacion.id})
         messages.success(request, f'Opción «{opcion.nombre}» actualizada.')
         return redirect('gestion:opcion_lista', votacion_id=votacion.id)
 
@@ -406,6 +421,7 @@ def opcion_eliminar(request, votacion_id, opcion_id):
 
         nombre = opcion.nombre
         opcion.delete()
+        registrar_evento(request, 'opciones', 'opcion_eliminada', {'id': opcion_id, 'votacion': votacion.id})
         messages.success(request, f'Opción «{nombre}» eliminada.')
         return redirect('gestion:opcion_lista', votacion_id=votacion.id)
 

@@ -8,6 +8,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 
+from back.apps.auditoria.servicio import registrar_evento
 from .forms import SesionForm
 
 DIAS_RECORDARME = 7
@@ -54,6 +55,12 @@ def acceder(request):
         login_sesion(request, form.obtener_usuario())
         if form.cleaned_data.get('recordarme'):
             request.session.set_expiry(DIAS_RECORDARME * 24 * 60 * 60)
+        registrar_evento(
+            request,
+            modulo='usuarios',
+            accion='login',
+            detalles={'recordar': bool(form.cleaned_data.get('recordarme'))},
+        )
         messages.success(
             request,
             f'Bienvenido, {request.user.get_full_name() or request.user.username}.',
@@ -61,6 +68,18 @@ def acceder(request):
         if destino:
             return HttpResponseRedirect(destino)
         return HttpResponseRedirect(_destino_por_rol(request.user))
+
+    if request.method == 'POST':
+        # Intento de ingreso rechazado (credenciales, cuenta suspendida o
+        # bloqueada): queda en el registro sin exponer la clave.
+        registrar_evento(
+            request,
+            modulo='usuarios',
+            accion='login_fallido',
+            detalles={
+                'identificador': (request.POST.get('identificador') or '')[:100],
+            },
+        )
 
     return render(
         request,

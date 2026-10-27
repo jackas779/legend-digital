@@ -10,8 +10,9 @@ from back.apps.usuarios.permisos import PERMISOS_POR_ROL, codigos_del_catalogo
 class Command(BaseCommand):
     help = (
         'Crea el catálogo de permisos (ediciones.*, categorias.*, votaciones.*, '
-        'opciones.*, usuarios.*, resultados.ver, padron.ver) y los asigna a los '
-        'cuatro roles. Es idempotente: ejecutarlo dos veces no duplica nada.'
+        'opciones.*, usuarios.*, resultados.ver, padron.ver, auditoria.ver) y los '
+        'asigna a los cuatro roles. Es idempotente: ejecutarlo dos veces no '
+        'duplica nada.'
     )
 
     @transaction.atomic
@@ -32,7 +33,7 @@ class Command(BaseCommand):
                 )
                 creados += created
 
-        for codigo in ('resultados.ver', 'padron.ver'):
+        for codigo in ('resultados.ver', 'padron.ver', 'auditoria.ver'):
             _, created = Permission.objects.get_or_create(
                 codigo=codigo,
                 defaults={
