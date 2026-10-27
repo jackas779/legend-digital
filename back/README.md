@@ -137,7 +137,11 @@ Enforcement:
 | GET | `/ediciones/<id>/` | Categorías y votaciones de la edición |
 | GET | `/votaciones/<id>/` | Tarjetón |
 | POST | `/votaciones/<id>/votar/` | Registrar voto (requiere sesión) |
-| GET | `/votaciones/<id>/resultados/` | Conteo y porcentajes |
+| GET | `/votaciones/<id>/resultados/` | Conteo y porcentajes (según visibilidad R2) |
+| GET | `/comprobante/<hash>/` | Comprobante de voto; sin la opción, solo el dueño |
+| GET | `/mis-votos/` | Historial del votante con sus comprobantes |
+| GET | `/resultados/` | Índice de ediciones con resultados (`resultados.ver`) |
+| GET | `/resultados/edicion/<id>/` | Consolidado por edición (`resultados.ver`) |
 | GET | `/accounts/login/` | Inicio de sesión (correo, usuario o documento) |
 | POST | `/accounts/logout/` | Cierre de sesión (por POST, con CSRF) |
 | GET | `/registro/` | Crear cuenta de votante |
@@ -198,6 +202,9 @@ ediciones, categorías, votaciones y opciones.
   `back/apps/usuarios/auth.py`, conectada como backend de Django.
 - Se puede iniciar sesión con **correo, nombre de usuario o documento**, en
   ese orden; coincide con las cuentas de prueba del prototipo.
+- **Destino por rol al entrar (V6)**: Administrador → `/admin/`,
+  Organizador → `/gestion/ediciones/`, Votante → inicio, Auditor →
+  `/resultados/`. El parámetro `next` seguro tiene prioridad.
 - Bloqueo por intentos fallidos: 5 fallos bloquean la cuenta 15 minutos
   (usa `intentos_fallidos` y `bloqueado_hasta` del perfil).
 - Solo entra quien esté `ACTIVO`: un perfil `SUSPENDIDO` o `INACTIVO` queda
@@ -240,15 +247,15 @@ python manage.py test
 ```
 
 Cubren creación de ediciones/votaciones/opciones, tarjetón, registro de voto,
-voto duplicado, opción de otra votación, votación cerrada, resultados,
-autenticación (correo/usuario/documento, suspendidos, bloqueo por intentos,
-throttling 429, sesión con "recordarme", logout por POST), registro y gestión
-de cuentas, permisos (catálogo idempotente, helper por rol, 403 del votante
-en escrituras, panel por rol), gestión MVT de ediciones/categorías
-(duplicados en el formulario, confirmación de borrado, bloqueos con motivo y
-transiciones de estado) y gestión MVT de votaciones/opciones (filtro por
-edición y categoría, fechas válidas, abrir/cerrar conservando votos, casilla
-única por votación y bloqueo de opciones con votos).
+voto duplicado, opción de otra votación, votación cerrada y fuera de rango,
+resultados, autenticación (correo/usuario/documento, suspendidos, bloqueo por
+intentos, throttling 429, sesión con "recordarme", logout por POST), registro
+y cambio de contraseña, gestión de cuentas, permisos (catálogo idempotente,
+helper por rol, 403 del votante en escrituras, panel por rol), gestión MVT
+completa (ediciones, categorías, votaciones, opciones, con duplicados y
+bloqueos legibles), comprobante que no revela la opción, historial del
+votante, destino por rol al iniciar sesión, visibilidad de resultados y
+consolidado por edición.
 
 ## Migraciones
 

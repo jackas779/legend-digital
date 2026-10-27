@@ -22,6 +22,22 @@ def _destino_seguro(request):
     return None
 
 
+def _destino_por_rol(user):
+    """V6: cada rol aterriza donde le corresponde."""
+    if user.is_superuser:
+        return reverse('admin:index')
+
+    perfil = getattr(user, 'perfil_usuario', None)
+    rol = getattr(perfil, 'rol', None)
+    nombre_rol = getattr(rol, 'nombre', '')
+
+    return {
+        'Administrador': reverse('admin:index'),
+        'Organizador': reverse('gestion:ediciones'),
+        'Auditor': reverse('resultados_indice'),
+    }.get(nombre_rol, reverse('inicio'))
+
+
 def acceder(request):
     """Inicia sesión con correo, usuario o documento.
 
@@ -42,7 +58,9 @@ def acceder(request):
             request,
             f'Bienvenido, {request.user.get_full_name() or request.user.username}.',
         )
-        return HttpResponseRedirect(destino or reverse('inicio'))
+        if destino:
+            return HttpResponseRedirect(destino)
+        return HttpResponseRedirect(_destino_por_rol(request.user))
 
     return render(
         request,

@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+
+{% block title %}Comprobante de voto — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <div class="login-box" style="max-width:480px">
+    <h1>Comprobante de voto</h1>
+    <p class="lead">Tu voto quedó registrado. El voto es secreto: el
+    comprobante no dice por qué opción votaste.</p>
+
+    <p><strong>Votación:</strong> {{ votacion.titulo }}</p>
+    <p><strong>Fecha de emisión:</strong> {{ padron.fecha_emision|date:"d/m/Y H:i" }}</p>
+    <p><strong>Firma del voto:</strong><br><code>{{ padron.hash_comprobante }}</code></p>
+
+    <p><a href="{% url 'resultados' votacion.id %}">Ver resultados de esta votación</a></p>
+    <p><a href="{% url 'mis_votos' %}">← Volver a mis votos</a></p>
+  </div>
+{% endblock %}

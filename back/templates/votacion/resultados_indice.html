@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+
+{% block title %}Resultados por edición — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <h1>Resultados</h1>
+  <p class="lead">Elige una edición para ver su consolidado.</p>
+
+  {% for edicion in ediciones %}
+    <a class="card" href="{% url 'resultados_consolidado' edicion.id %}">
+      <strong>{{ edicion }}</strong> <span class="badge">{{ edicion.estado }}</span>
+      <div class="meta">{{ edicion.votaciones.count }} votacion(es)</div>
+    </a>
+  {% empty %}
+    <p class="empty">No hay ediciones todavía.</p>
+  {% endfor %}
+{% endblock %}

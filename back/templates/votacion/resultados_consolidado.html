@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block title %}Consolidado {{ edicion }} — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <h1>Consolidado: {{ edicion }}</h1>
+  <p class="lead"><a href="{% url 'resultados_indice' %}">← Otras ediciones</a></p>
+
+  <p><strong>Total de votos de la edición:</strong> {{ total_edicion }}</p>
+
+  {% for votacion in votaciones %}
+    <h2>{{ votacion.titulo }}</h2>
+    <table>
+      <thead>
+        <tr><th>Votación</th><th>Categoría</th><th>Estado</th><th>Votos</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{{ votacion.nombre }}</td>
+          <td>{{ votacion.categoria }}</td>
+          <td><span class="badge">{{ votacion.estado }}</span></td>
+          <td>{{ votacion.total }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      <a href="{% url 'resultados' votacion.id %}">Detalle por opción</a>
+    </p>
+  {% empty %}
+    <p class="empty">Esta edición no tiene votaciones.</p>
+  {% endfor %}
+{% endblock %}

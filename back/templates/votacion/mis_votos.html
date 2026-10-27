@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+
+{% block title %}Mis votos — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <h1>Mis votos</h1>
+  <p class="lead">Votaciones en las que ya participaste, con tu comprobante.</p>
+
+  {% for padron in padrones %}
+    <div class="card">
+      <strong>{{ padron.votacion.titulo }}</strong>
+      <div class="meta">Emitido el {{ padron.fecha_emision|date:"d/m/Y H:i" }}</div>
+      <a href="{% url 'comprobante' padron.hash_comprobante %}">Ver comprobante</a>
+    </div>
+  {% empty %}
+    <p class="empty">Aún no has votado en ninguna votación.</p>
+  {% endfor %}
+{% endblock %}

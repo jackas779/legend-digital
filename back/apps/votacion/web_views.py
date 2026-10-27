@@ -1,11 +1,13 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from back.apps.elecciones.models import Edicion, Opcion, Votacion
+from back.apps.usuarios.permisos import requiere_permiso, tiene_permiso
 
 from .models import PadronVotante, Voto
 
@@ -99,7 +101,11 @@ def votar(request, pk):
 
 
 def resultados(request, pk):
-    """Resultados por opción, con conteo y porcentaje."""
+    """Resultados por opción, con conteo y porcentaje.
+
+    R2 (regla de visibilidad): se ven si la votación los muestra en vivo,
+    si ya está FINALIZADA o si se tiene el permiso ``resultados.ver``.
+    """
     votacion = get_object_or_404(
         Votacion.objects.select_related('edicion', 'categoria'),
         pk=pk,
@@ -108,7 +114,7 @@ def resultados(request, pk):
     visible = (
         votacion.mostrar_resultados_en_vivo
         or votacion.estado == 'FINALIZADA'
-        or request.user.is_staff
+        or tiene_permiso(request.user, 'resultados.ver')
     )
 
     if not visible:
@@ -127,4 +133,67 @@ def resultados(request, pk):
         request,
         'votacion/resultados.html',
         {'votacion': votacion, 'opciones': opciones, 'total': total},
+    )
+
+
+@login_required
+def comprobante(request, hash_comprobante):
+    """V4: comprobante de voto; solo lo ve su dueño y nunca revela la opción."""
+    padron = get_object_or_404(
+        PadronVotante.objects.select_related(
+            'votacion__edicion', 'votacion__categoria'
+        ),
+        hash_comprobante=hash_comprobante,
+    )
+
+    if padron.usuario_id != request.user.id:
+        raise PermissionDenied('Este comprobante solo lo puede ver su dueño.')
+
+    return render(
+        request,
+        'votacion/comprobante.html',
+        {'padron': padron, 'votacion': padron.votacion},
+    )
+
+
+@login_required
+def mis_votos(request):
+    """V5: votaciones en las que el usuario ya votó, con su comprobante."""
+    padrones = (
+        PadronVotante.objects.filter(usuario=request.user, ha_votado=True)
+        .select_related('votacion__edicion', 'votacion__categoria')
+        .order_by('-fecha_emision')
+    )
+    return render(request, 'votacion/mis_votos.html', {'padrones': padrones})
+
+
+@requiere_permiso('resultados.ver')
+def resultados_indice(request):
+    """R3: ediciones con resultados para elegir el consolidado."""
+    return render(
+        request,
+        'votacion/resultados_indice.html',
+        {'ediciones': Edicion.objects.order_by('-anio', 'nombre')},
+    )
+
+
+@requiere_permiso('resultados.ver')
+def resultados_consolidado(request, edicion_id):
+    """R3: todas las votaciones de una edición con su conteo."""
+    edicion = get_object_or_404(Edicion, pk=edicion_id)
+    votaciones = (
+        Votacion.objects.filter(edicion=edicion)
+        .annotate(total=Count('opciones__votos'))
+        .order_by('categoria__nombre', 'nombre')
+    )
+    total_edicion = sum(v.total for v in votaciones)
+
+    return render(
+        request,
+        'votacion/resultados_consolidado.html',
+        {
+            'edicion': edicion,
+            'votaciones': votaciones,
+            'total_edicion': total_edicion,
+        },
     )

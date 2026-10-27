@@ -1,3 +1,4 @@
+import io
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -193,3 +194,247 @@ class FlujoVotacionMVTTest(TestCase):
         self.assertEqual(respuesta.status_code, 200)
         self.assertContains(respuesta, 'Canción A')
         self.assertEqual(respuesta.context['total'], 1)
+
+
+class FlujoVotanteTests(TestCase):
+    """Entregables V4, V5 y Q4: comprobante e historial del votante."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from django.core.management import call_command
+
+        from back.apps.usuarios.models import Role, Usuario
+
+        cache.clear()
+        call_command('cargar_permisos', stdout=io.StringIO())
+        self.edicion, self.categoria, self.votacion, self.cancion_a, self.cancion_b = (
+            crear_escenario()
+        )
+        self.user_model = get_user_model()
+
+        self.votante = self.user_model.objects.create_user(
+            username='votante-flujo', password='voto1234'
+        )
+        rol_votante = Role.objects.get(nombre='Votante')
+        Usuario.objects.create(
+            user=self.votante,
+            documento='8806000001',
+            nombres='Votante',
+            apellidos='Prueba',
+            correo='votante-flujo@test.com',
+            rol=rol_votante,
+        )
+        self.otro = self.user_model.objects.create_user(
+            username='otro-votante', password='voto1234'
+        )
+
+    def _votar(self):
+        self.client.force_login(self.votante)
+        self.client.post(
+            reverse('votar', args=[self.votacion.pk]),
+            {'opcion': self.cancion_a.pk},
+        )
+        from back.apps.votacion.models import PadronVotante
+
+        return PadronVotante.objects.get(usuario=self.votante, votacion=self.votacion)
+
+    def test_comprobante_muestra_hash_y_sin_la_opcion(self):
+        """V4/Q4: votación, fecha y hash; nunca revela la opción elegida."""
+        padron = self._votar()
+
+        respuesta = self.client.get(
+            reverse('comprobante', args=[padron.hash_comprobante])
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, 'Canción favorita del público')
+        self.assertContains(respuesta, padron.hash_comprobante)
+        self.assertNotContains(respuesta, 'Canción A')
+        self.assertNotContains(respuesta, 'Artista A')
+
+    def test_comprobante_solo_lo_ve_el_dueno(self):
+        padron = self._votar()
+
+        # Otro usuario con sesión: prohibido.
+        self.client.force_login(self.otro)
+        self.assertEqual(
+            self.client.get(
+                reverse('comprobante', args=[padron.hash_comprobante])
+            ).status_code,
+            403,
+        )
+
+        # Anónimo: al login.
+        self.client.logout()
+        respuesta = self.client.get(
+            reverse('comprobante', args=[padron.hash_comprobante])
+        )
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertIn('/accounts/login/', respuesta['Location'])
+
+    def test_historial_lista_las_votaciones_votadas(self):
+        """V5: /mis-votos/ lista sus votaciones con enlace al comprobante."""
+        padron = self._votar()
+
+        respuesta = self.client.get(reverse('mis_votos'))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, 'Canción favorita del público')
+        self.assertContains(
+            respuesta,
+            reverse('comprobante', args=[padron.hash_comprobante]),
+        )
+        # Sin votos: mensaje de vacío para el otro usuario.
+        self.client.force_login(self.otro)
+        vacio = self.client.get(reverse('mis_votos'))
+        self.assertContains(vacio, 'Aún no has votado')
+
+
+class RedireccioneRolTests(TestCase):
+    """Entregable V6: destino por rol tras el login."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from django.core.management import call_command
+
+        from back.apps.usuarios.models import Role, Usuario
+
+        cache.clear()
+        call_command('cargar_permisos', stdout=io.StringIO())
+        self.user_model = get_user_model()
+        cache.clear()
+        self.pares = []
+        for nombre in ('Administrador', 'Organizador', 'Votante', 'Auditor'):
+            rol = Role.objects.get(nombre=nombre)
+            user = self.user_model.objects.create_user(
+                username=f'acc-{nombre.lower()}', password='clave-test-2026'
+            )
+            Usuario.objects.create(
+                user=user,
+                documento=f'8806-{int(rol.id):08d}',
+                nombres=nombre,
+                apellidos='Prueba',
+                correo=f'acc-{nombre.lower()}@test.com',
+                rol=rol,
+            )
+            self.pares.append((nombre, user))
+
+    def _entrar(self, user):
+        return self.client.post(
+            reverse('auth:login'),
+            {'identificador': user.username, 'password': 'clave-test-2026'},
+        )
+
+    def test_destino_por_rol(self):
+        esperado = {
+            'Administrador': '/admin/',
+            'Organizador': reverse('gestion:ediciones'),
+            'Votante': '/',  # listado de ediciones
+            'Auditor': reverse('resultados_indice'),
+        }
+        for nombre, user in self.pares:
+            with self.subTest(rol=nombre):
+                respuesta = self._entrar(user)
+                self.assertEqual(respuesta['Location'], esperado[nombre])
+                self.client.logout()
+
+    def test_next_seguro_tiene_prioridad_sobre_el_rol(self):
+        _, votante = self.pares[2]
+
+        respuesta = self.client.post(
+            reverse('auth:login'),
+            {
+                'identificador': votante.username,
+                'password': 'clave-test-2026',
+                'next': '/mis-votos/',
+            },
+        )
+
+        self.assertEqual(respuesta['Location'], '/mis-votos/')
+
+
+class ResultadosVisibilidadTests(TestCase):
+    """Entregables R2 y R3: visibilidad y consolidado por edición."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from django.core.management import call_command
+
+        from back.apps.usuarios.models import Role, Usuario
+
+        cache.clear()
+        call_command('cargar_permisos', stdout=io.StringIO())
+        # R2: ACTIVA sin resultados en vivo.
+        self.edicion, self.categoria, self.votacion, self.cancion_a, self.cancion_b = (
+            crear_escenario()
+        )
+        self.votacion.mostrar_resultados_en_vivo = False
+        self.votacion.save(update_fields=['mostrar_resultados_en_vivo'])
+
+        self.user_model = get_user_model()
+        self.votante = self.user_model.objects.create_user(
+            username='votante-res', password='voto1234'
+        )
+        Usuario.objects.create(
+            user=self.votante,
+            documento='8806000044',
+            nombres='Votante',
+            apellidos='Prueba',
+            correo='votante-res@test.com',
+            rol=Role.objects.get(nombre='Votante'),
+        )
+        self.otro = self.user_model.objects.create_user(
+            username='otro-res', password='voto1234'
+        )
+
+    def test_activa_sin_vivo_se_oculta_al_anonimo(self):
+        self.client.force_login(self.user_model.objects.create_user(
+            username='anonimo-real', password='voto1234'
+        ))
+        self.client.logout()
+
+        respuesta = self.client.get(reverse('resultados', args=[self.votacion.pk]))
+
+        self.assertRedirects(respuesta, reverse('tarjeton', args=[self.votacion.pk]))
+
+    def test_resultados_ver_los_ve_antes_del_cierre(self):
+        self.client.force_login(self.votante)
+
+        respuesta = self.client.get(reverse('resultados', args=[self.votacion.pk]))
+
+        self.assertEqual(respuesta.status_code, 200)
+
+    def test_finalizada_es_publica(self):
+        self.votacion.estado = 'FINALIZADA'
+        self.votacion.save(update_fields=['estado'])
+        self.client.logout()
+
+        respuesta = self.client.get(reverse('resultados', args=[self.votacion.pk]))
+
+        self.assertEqual(respuesta.status_code, 200)
+
+    def test_consolidado_por_edicion(self):
+        """R3: todas las votaciones de la edición; exige resultados.ver."""
+        votacion_extra = crear_votacion_extra(self.edicion, 'Letra inédita', 'Mejor letra')
+        self.client.force_login(self.otro)
+        self.client.post(
+            reverse('votar', args=[self.votacion.pk]), {'opcion': self.cancion_a.pk}
+        )
+
+        # Anónimo: exige permiso, redirige al login.
+        self.client.logout()
+        respuesta = self.client.get(
+            reverse('resultados_consolidado', args=[self.edicion.pk])
+        )
+        self.assertEqual(respuesta.status_code, 302)
+
+        # Votante (resultados.ver): ve el consolidado con las dos votaciones.
+        self.client.force_login(self.votante)
+        respuesta = self.client.get(
+            reverse('resultados_consolidado', args=[self.edicion.pk])
+        )
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, 'Canción favorita del público')
+        self.assertContains(respuesta, 'Mejor letra')
+        self.assertEqual(respuesta.context['total_edicion'], 1)
+        del votacion_extra
