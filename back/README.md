@@ -304,6 +304,7 @@ Se mantiene bajo `/api/` para la futura integración con Vue:
 
 | Módulo | Ruta base |
 |---|---|
+| Categorías públicas | `GET /api/categorias/` (categorías con votaciones y opciones anidadas en JSON; pública sin token, filtrable con `?edicion=<id>`) |
 | Usuarios | `/api/usuarios/` (`register`, `login`, `me`, `roles`, `permisos`, `health`) |
 | Elecciones | `/api/elecciones/` (`ediciones`, `categorias`, `votaciones`, `opciones`, `normativas`, `multimedia`, `health`) |
 | Votación | `/api/votacion/` (`votaciones/<id>/opciones/`, `health`) |

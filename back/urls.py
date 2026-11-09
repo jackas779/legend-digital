@@ -6,8 +6,14 @@ Vistas MVT en la raíz, API REST bajo /api/ y panel en /admin/.
 from django.contrib import admin
 from django.urls import include, path
 
+from back.apps.elecciones.views import categorias_publicas
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    # API GET obligatoria: categorías con sus votaciones y opciones en JSON.
+    # Pública sin token (como el tarjetón MVT); filtrable con ?edicion=<id>.
+    path('api/categorias/', categorias_publicas, name='categorias-publicas'),
 
     # Autenticación por sesión del sitio (login/logout del namespace 'auth').
     path('accounts/', include('back.apps.usuarios.sesion_urls')),

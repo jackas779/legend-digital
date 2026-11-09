@@ -1,5 +1,10 @@
+from django.db import models
 from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
 from rest_framework import generics
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
 
 from back.apps.usuarios.permisos import TienePermiso
 
@@ -114,3 +119,78 @@ class RecursoMultimediaListCreateView(generics.ListCreateAPIView):
     permiso_requerido = 'votaciones.editar'
     queryset = RecursoMultimedia.objects.all()
     serializer_class = RecursoMultimediaSerializer
+
+
+def _opcion_publica(opcion):
+    """Diccionario compacto de una opción para el tarjetón del front."""
+    return {
+        'id': opcion.pk,
+        'nombre': opcion.nombre,
+        'subtitulo': opcion.subtitulo,
+        'orden': opcion.orden,
+        'es_voto_blanco': opcion.es_voto_blanco,
+    }
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def categorias_publicas(request):
+    """API GET obligatoria: categorías y opciones en un solo JSON.
+
+    Con ``?edicion=<id>`` entrega las categorías de esa edición, cada una
+    con sus votaciones y, dentro de cada votación, sus opciones (JSON).
+    Sin parámetro recorre todas las votaciones existentes. Es pública
+    (sin token) por diseño: muestra exactamente los mismos datos que el
+    tarjetón MVT, que tampoco exige login.
+    """
+    edicion = None
+    edicion_id = request.query_params.get('edicion')
+    if edicion_id:
+        edicion = get_object_or_404(Edicion, pk=edicion_id)
+
+    categorias_qs = Categoria.objects.all().order_by('nombre')
+    if edicion is not None:
+        categorias_qs = categorias_qs.filter(votaciones__edicion=edicion)
+    categorias_qs = categorias_qs.distinct().prefetch_related(
+        models.Prefetch(
+            'votaciones',
+            # Con la edición marcada, la columna queda lista para la densidad.
+            queryset=Votacion.objects.select_related('edicion').order_by('fecha_apertura'),
+        )
+    )
+
+    data = []
+    for categoria in categorias_qs:
+        votaciones = []
+        for votacion in categoria.votaciones.all():
+            if edicion is not None and votacion.edicion_id != edicion.pk:
+                continue
+            votaciones.append({
+                'id': votacion.pk,
+                'nombre': votacion.nombre,
+                'edicion': {'id': votacion.edicion_id, 'nombre': votacion.edicion.nombre},
+                'descripcion': votacion.descripcion,
+                'estado': votacion.estado,
+                'abierta': votacion.esta_abierta,
+                'fecha_apertura': votacion.fecha_apertura,
+                'fecha_cierre': votacion.fecha_cierre,
+                'mostrar_resultados_en_vivo': votacion.mostrar_resultados_en_vivo,
+                'opciones': [_opcion_publica(op) for op in votacion.opciones.order_by('orden', 'nombre')],
+            })
+        if not edicion and not votaciones:
+            # Sin edición de referencia solo listamos categorías con votaciones.
+            continue
+        data.append({
+            'id': categoria.pk,
+            'nombre': categoria.nombre,
+            'descripcion': categoria.descripcion,
+            'votaciones': votaciones,
+        })
+
+    return Response({
+        'edicion': (
+            {'id': edicion.pk, 'nombre': edicion.nombre, 'anio': edicion.anio, 'estado': edicion.estado}
+            if edicion is not None else None
+        ),
+        'categorias': data,
+    })

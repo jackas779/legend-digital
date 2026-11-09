@@ -108,14 +108,26 @@ def votar(request, pk):
             votacion=votacion,
         )
 
-        if padron.ha_votado:
+        # Integridad frente a concurrencia: la reserva del voto se hace con
+        # un UPDATE condicional atómico. Si dos requests simultáneas pasan
+        # por aquí, solo una logra convertir ha_votado=False → True; la otra
+        # recibe 0 filas y es rechazada. Sin esta condición, dos lecturas
+        # concurrentes del flag podrían crear dos votos (la urna es anónima,
+        # así que no hay llave que lo impida en MySQL). La creación del voto
+        # queda dentro de la transacción: si falla, el rollback revierte la
+        # reserva y el votante puede reintentar sin problema.
+        reservados = PadronVotante.objects.filter(
+            pk=padron.pk,
+            ha_votado=False,
+        ).update(ha_votado=True)
+
+        if not reservados:
             messages.warning(request, 'Ya registraste tu voto en esta votación.')
             return redirect('resultados', pk=pk)
 
         voto = Voto.objects.create(opcion=opcion)
-        padron.ha_votado = True
         padron.hash_comprobante = voto.firma_criptografica
-        padron.save(update_fields=['ha_votado', 'hash_comprobante'])
+        padron.save(update_fields=['hash_comprobante'])
 
     messages.success(request, 'Tu voto quedó registrado correctamente.')
     # Auditoría: se deja constancia de la participación, NUNCA de la

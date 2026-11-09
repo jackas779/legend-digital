@@ -896,3 +896,128 @@ class GestionOpcionesTests(TestCase):
             [i for i in inline_context if i.model == Opcion][0].model,
             (Opcion,),
         )
+
+
+class CategoriasPublicasTests(TestCase):
+    """API GET obligatoria ``/api/categorias/`` (categorías y opciones JSON).
+
+    La lectura solo exige autenticación (votante incluido); con
+    ``?edicion=<id>`` entrega las categorías, votaciones y opciones de esa
+    edición anidadas en una sola respuesta.
+    """
+
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.core.cache import cache
+        from django.utils import timezone
+
+        from back.apps.elecciones.models import Categoria, Edicion, Votacion
+        from back.apps.usuarios.models import Role, Usuario
+
+        cache.clear()
+        self.client = APIClient()
+        self.user_model = get_user_model()
+
+        rol_votante, _ = Role.objects.get_or_create(nombre='Votante')
+        votante = self.user_model.objects.create_user(
+            username='votante-api',
+            email='votante-api@test.com',
+            password='voto1234',
+        )
+        Usuario.objects.create(
+            user=votante,
+            documento='8809000066',
+            nombres='Votante',
+            apellidos='API',
+            correo='votante-api@test.com',
+            rol=rol_votante,
+        )
+        self._login_jwt('votante-api@test.com', 'voto1234')
+
+        self.musica = Categoria.objects.create(nombre='Música')
+        self.deportes = Categoria.objects.create(nombre='Deportes')
+
+        self.festival = Edicion.objects.create(nombre='Festival', anio=2027)
+        self.estudiantil = Edicion.objects.create(nombre='Estudiantiles', anio=2027)
+
+        ventana = (timezone.now() - timedelta(days=1), timezone.now() + timedelta(days=1))
+        self.vot_cancion = Votacion.objects.create(
+            edicion=self.festival,
+            categoria=self.musica,
+            nombre='Canción favorita',
+            estado='ACTIVA',
+            fecha_apertura=ventana[0],
+            fecha_cierre=ventana[1],
+        )
+        self.vot_equipo = Votacion.objects.create(
+            edicion=self.estudiantil,
+            categoria=self.deportes,
+            nombre='Mejor equipo',
+            estado='ACTIVA',
+            fecha_apertura=ventana[0],
+            fecha_cierre=ventana[1],
+        )
+
+        from back.apps.elecciones.models import Opcion
+
+        self.op_a = Opcion.objects.create(
+            votacion=self.vot_cancion, nombre='Canción A', subtitulo='Artista A', orden=1
+        )
+        self.op_b = Opcion.objects.create(
+            votacion=self.vot_cancion, nombre='Canción B', subtitulo='Artista B', orden=2
+        )
+        Opcion.objects.create(votacion=self.vot_equipo, nombre='Equipo Rojo', orden=1)
+
+    def _login_jwt(self, correo, clave):
+        login = self.client.post(
+            reverse('login'),
+            {'correo': correo, 'password': clave},
+            format='json',
+        )
+        self.assertEqual(login.status_code, 200)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
+
+    def test_es_publica_sin_token(self):
+        self.client.credentials()
+
+        response = self.client.get(reverse('categorias-publicas'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('edicion', response.data)
+
+    def test_entrega_categorias_con_opciones_filtradas_por_edicion(self):
+        response = self.client.get(
+            reverse('categorias-publicas'), {'edicion': self.festival.id}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['edicion']['nombre'], 'Festival')
+        self.assertEqual(len(response.data['categorias']), 1)
+
+        categoria = response.data['categorias'][0]
+        self.assertEqual(categoria['nombre'], 'Música')
+        self.assertEqual(len(categoria['votaciones']), 1)
+
+        votacion = categoria['votaciones'][0]
+        self.assertEqual(votacion['nombre'], 'Canción favorita')
+        self.assertTrue(votacion['abierta'])
+        self.assertEqual(
+            [op['nombre'] for op in votacion['opciones']],
+            ['Canción A', 'Canción B'],
+        )
+        self.assertEqual(votacion['opciones'][0]['subtitulo'], 'Artista A')
+        self.assertEqual(votacion['opciones'][0]['orden'], 1)
+
+    def test_sin_filtro_entrega_todas_las_categorias(self):
+        response = self.client.get(reverse('categorias-publicas'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data['edicion'])
+        nombres = {c['nombre'] for c in response.data['categorias']}
+        self.assertEqual(nombres, {'Música', 'Deportes'})
+
+    def test_edicion_inexistente_responde_404(self):
+        response = self.client.get(reverse('categorias-publicas'), {'edicion': 9999})
+
+        self.assertEqual(response.status_code, 404)
