@@ -20,27 +20,57 @@ def rol_del_usuario(user):
 
 
 def inicio(request):
-    """Listado de ediciones disponibles (Festival 2027, ...)."""
-    ediciones = (
+    """Listado de ediciones disponibles (Festival 2027, ...).
+
+    Cada tarjeta resume cuántas categorías agrupa la edición y sus nombres,
+    para que se vea de un vistazo que una edición puede tener varias.
+    """
+    ediciones = list(
         Edicion.objects
         .prefetch_related('votaciones__categoria')
         .order_by('-anio', 'nombre')
     )
+    for edicion in ediciones:
+        nombres = sorted({v.categoria.nombre for v in edicion.votaciones.all()})
+        edicion.num_categorias = len(nombres)
+        edicion.nombres_categorias = nombres
     return render(request, 'votacion/inicio.html', {'ediciones': ediciones})
 
 
 def edicion_detalle(request, pk):
-    """Categorías y votaciones de una edición."""
+    """Categorías y votaciones de una edición, agrupadas por categoría.
+
+    Para votantes autenticados marca qué votaciones (y qué categorías de
+    la edición) ya consumieron su voto, para que la regla
+    usuario → categoría → edición quede visible en la pantalla.
+    """
     edicion = get_object_or_404(Edicion, pk=pk)
     votaciones = (
         edicion.votaciones
         .select_related('categoria')
         .order_by('categoria__nombre', 'nombre')
     )
+
+    ids_votaciones_votadas = set()
+    ids_categorias_votadas = set()
+    if request.user.is_authenticated:
+        filas = PadronVotante.objects.filter(
+            usuario=request.user,
+            votacion__edicion=edicion,
+            ha_votado=True,
+        ).values_list('votacion_id', 'categoria_id')
+        ids_votaciones_votadas = {fila[0] for fila in filas}
+        ids_categorias_votadas = {fila[1] for fila in filas}
+
     return render(
         request,
         'votacion/edicion.html',
-        {'edicion': edicion, 'votaciones': votaciones},
+        {
+            'edicion': edicion,
+            'votaciones': votaciones,
+            'ids_votaciones_votadas': ids_votaciones_votadas,
+            'ids_categorias_votadas': ids_categorias_votadas,
+        },
     )
 
 

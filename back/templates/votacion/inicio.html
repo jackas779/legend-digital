@@ -11,8 +11,12 @@
       <strong>{{ edicion }}</strong>
       <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
       <div class="meta">
-        {{ edicion.votaciones.count }} votación{{ edicion.votaciones.count|pluralize:"es" }}
+        {{ edicion.num_categorias }} categor{{ edicion.num_categorias|pluralize:"ía,ías" }},
+        {{ edicion.votaciones.count }} votaci{{ edicion.votaciones.count|pluralize:"ón,ones" }}
       </div>
+      {% if edicion.nombres_categorias %}
+        <div class="meta">Categorías: {{ edicion.nombres_categorias|join:", " }}</div>
+      {% endif %}
     </a>
   {% empty %}
     <p class="empty">Todavía no hay ediciones creadas.</p>

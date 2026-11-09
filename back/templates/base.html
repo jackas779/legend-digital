@@ -161,6 +161,32 @@
     th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); }
     th { color: var(--muted); font-weight: 600; white-space: nowrap; }
     td.meta { color: var(--muted); }
+
+    /* Agrupación por categoría (página de edición) */
+    .grupo-categoria {
+      background: rgba(99, 102, 241, 0.06);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1rem 1.15rem 0.9rem;
+      margin-bottom: 1.1rem;
+    }
+    .grupo-categoria .grupo-head {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.6rem;
+    }
+    .grupo-categoria h2 { margin: 0; font-size: 1.05rem; }
+    .grupo-categoria .desc { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.6rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 0.7rem;
+    }
+    .grid .card { margin-bottom: 0; height: 100%; }
+    .badge.votada { color: #93c5fd; border-color: #1e3a8a; background: #0a1a33; }
+    .resumen { color: var(--muted); font-size: 0.85rem; margin: 0 0 1.2rem; }
   </style>
 </head>
 <body>

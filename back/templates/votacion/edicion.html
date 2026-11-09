@@ -4,21 +4,44 @@
 
 {% block content %}
   <h1>{{ edicion }}</h1>
-  <p class="lead">Categorías y votaciones de esta edición.</p>
+  <p class="lead">Categorías y votaciones de esta edición. Emites <strong>un solo voto por
+    categoría</strong>: si una categoría tiene varias votaciones, votar en una de ellas
+    bloquea las demás.</p>
 
-  {% regroup votaciones by categoria as categorias %}
-  {% for grupo in categorias %}
-    <h2>{{ grupo.grouper }}</h2>
-    {% for votacion in grupo.list %}
-      <a class="card" href="{% url 'tarjeton' votacion.pk %}">
-        <strong>{{ votacion.nombre }}</strong>
-        <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
-        <div class="meta">
-          {{ votacion.opciones.count }} opción{{ votacion.opciones.count|pluralize:"es" }}
-          · {{ votacion.total_votos }} voto{{ votacion.total_votos|pluralize }}
-        </div>
-      </a>
-    {% endfor %}
+  {% regroup votaciones by categoria as grupos %}
+  {% if ids_categorias_votadas %}
+    <p class="resumen">Ya votaste en {{ ids_categorias_votadas|length }} categorí{{ ids_categorias_votadas|length|pluralize:"a,as" }} de esta edición.</p>
+  {% endif %}
+
+  {% for grupo in grupos %}
+    <section class="grupo-categoria">
+      <div class="grupo-head">
+        <h2>{{ grupo.grouper }}</h2>
+        <span class="badge">{{ grupo.list|length }} votaci{{ grupo.list|length|pluralize:"ón,ones" }}</span>
+        {% if grupo.grouper.id in ids_categorias_votadas %}
+          <span class="badge votada">✓ Ya votaste aquí</span>
+        {% endif %}
+      </div>
+      {% if grupo.grouper.descripcion %}
+        <p class="desc">{{ grupo.grouper.descripcion }}</p>
+      {% endif %}
+
+      <div class="grid">
+        {% for votacion in grupo.list %}
+          <a class="card" href="{% url 'tarjeton' votacion.pk %}">
+            <strong>{{ votacion.nombre }}</strong>
+            <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
+            {% if votacion.id in ids_votaciones_votadas %}
+              <span class="badge votada">Tu voto</span>
+            {% endif %}
+            <div class="meta">
+              {{ votacion.opciones.count }} opci{{ votacion.opciones.count|pluralize:"ón,ones" }}
+              · {{ votacion.total_votos }} voto{{ votacion.total_votos|pluralize }}
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    </section>
   {% empty %}
     <p class="empty">Esta edición todavía no tiene votaciones.</p>
   {% endfor %}

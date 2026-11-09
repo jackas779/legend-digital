@@ -67,9 +67,12 @@ paquete `back/`.
 El voto apunta **solo a la opción**: la votación se deriva de ella, así que es
 imposible registrar un voto con una opción de otra votación.
 
-`votacion.PadronVotante` garantiza un voto por usuario y votación (único por
-`usuario` + `votacion`). Se apoya en `auth.User` para que cualquier usuario de
-Django pueda votar sin perfil adicional.
+`votacion.PadronVotante` garantiza **un voto por usuario, categoría y edición**
+(único por `usuario` + `edicion` + `categoria`; el padrón guarda copias
+desnormalizadas de la jerarquía de la votación). Así, aunque una categoría
+tenga varias votaciones (subeventos), votar en el segundo se rechaza. Se
+apoya en `auth.User` para que cualquier usuario de Django pueda votar sin
+perfil adicional.
 
 ## Instalación
 
@@ -295,7 +298,8 @@ Reglas del flujo de voto:
 
 1. La votación debe estar `ACTIVA` y dentro de sus fechas.
 2. La opción debe pertenecer a esa votación.
-3. Cada usuario vota una sola vez por votación.
+3. Cada usuario emite un solo voto por **categoría y edición** (aunque la
+   categoría tenga varios subeventos).
 4. El voto se guarda de forma anónima y se firma con SHA-256.
 
 ## API REST (existente)
