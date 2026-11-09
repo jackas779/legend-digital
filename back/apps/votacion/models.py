@@ -13,6 +13,14 @@ class PadronVotante(models.Model):
     Solo el rol ``Votante`` emite voto (el auditor, el organizador y el
     administrador son autoridades del proceso y no votan). Los registros
     de padrón corresponden por tanto a votantes con su perfil asignado.
+
+    Unicidad (CP-02): un votante emite **un solo voto por categoría dentro
+    de cada edición**, así su categoría tenga varias votaciones (subeventos).
+    Para que la BD lo garantice sin consultas adicionales, el padrón guarda
+    copias desnormalizadas de ``edicion`` y ``categoria`` tomadas de la
+    votación; la constraint ``uq_usuario_categoria_edicion`` cierra el paso
+    a un segundo voto en la misma categoría aunque dos requests entren en
+    paralelo por votaciones distintas.
     """
 
     usuario = models.ForeignKey(
@@ -21,6 +29,22 @@ class PadronVotante(models.Model):
         related_name='padrones',
     )
     votacion = models.ForeignKey(Votacion, on_delete=models.CASCADE, related_name='padron')
+    edicion = models.ForeignKey(
+        'elecciones.Edicion',
+        on_delete=models.CASCADE,
+        related_name='padrones',
+        null=True,
+        blank=True,
+        help_text='Copia desnormalizada de la edición de la votación.',
+    )
+    categoria = models.ForeignKey(
+        'elecciones.Categoria',
+        on_delete=models.CASCADE,
+        related_name='padrones',
+        null=True,
+        blank=True,
+        help_text='Copia desnormalizada de la categoría de la votación.',
+    )
     ha_votado = models.BooleanField(default=False)
     fecha_emision = models.DateTimeField(auto_now_add=True)
     hash_comprobante = models.CharField(max_length=256, unique=True, null=True, blank=True)
@@ -33,6 +57,10 @@ class PadronVotante(models.Model):
             models.UniqueConstraint(
                 fields=['usuario', 'votacion'],
                 name='uq_usuario_votacion',
+            ),
+            models.UniqueConstraint(
+                fields=['usuario', 'edicion', 'categoria'],
+                name='uq_usuario_categoria_edicion',
             ),
         ]
 

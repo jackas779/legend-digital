@@ -154,7 +154,11 @@ class Command(BaseCommand):
         """Habilita a todos en el padrón y emite los votos que falten
         hasta llegar a la participación pedida."""
         for user in votantes:
-            PadronVotante.objects.get_or_create(usuario=user, votacion=votacion)
+            PadronVotante.objects.get_or_create(
+                usuario=user,
+                votacion=votacion,
+                defaults={'edicion': votacion.edicion, 'categoria': votacion.categoria},
+            )
 
         ya_votaron = PadronVotante.objects.filter(
             votacion=votacion, ha_votado=True
@@ -185,6 +189,10 @@ class Command(BaseCommand):
                     padron, _ = PadronVotante.objects.get_or_create(
                         usuario=user,
                         votacion=votacion,
+                        defaults={
+                            'edicion': votacion.edicion,
+                            'categoria': votacion.categoria,
+                        },
                     )
                     if padron.ha_votado:
                         continue

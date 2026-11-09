@@ -163,6 +163,69 @@ class FlujoVotacionMVTTest(TestCase):
         self.assertEqual(Voto.objects.count(), 1)
         self.assertEqual(Voto.objects.first().opcion, self.cancion_a)
 
+    def test_no_se_vota_dos_veces_en_subevento_distinto_de_la_misma_categoria(self):
+        """CP-02 estricto: un voto por usuario, categoría y edición."""
+        ahora = timezone.now()
+        subevento_b = Votacion.objects.create(
+            edicion=self.edicion,
+            categoria=self.categoria,
+            nombre='Mejor artista del público',
+            fecha_apertura=ahora - timedelta(hours=2),
+            fecha_cierre=ahora + timedelta(days=1),
+            estado='ACTIVA',
+            mostrar_resultados_en_vivo=True,
+        )
+        artista_x = Opcion.objects.create(votacion=subevento_b, nombre='Artista X', orden=1)
+
+        self.client.force_login(self.user)
+        self.client.post(reverse('votar', args=[self.votacion.pk]), {'opcion': self.cancion_a.pk})
+
+        respuesta = self.client.post(
+            reverse('votar', args=[subevento_b.pk]), {'opcion': artista_x.pk}
+        )
+
+        self.assertRedirects(respuesta, reverse('resultados', args=[subevento_b.pk]))
+        # Queda un solo voto: el primero (Canción A), no el del subevento B;
+        # y un solo padrón habilitado al nivel usuario → categoría → edición.
+        self.assertEqual(Voto.objects.count(), 1)
+        self.assertEqual(Voto.objects.first().opcion, self.cancion_a)
+        habilitados = PadronVotante.objects.filter(
+            usuario=self.user,
+            edicion=self.edicion,
+            categoria=self.categoria,
+            ha_votado=True,
+        )
+        self.assertEqual(habilitados.count(), 1)
+
+    def test_se_permite_votar_en_otra_categoria(self):
+        """CP-03: otra categoría dentro de la misma edición sí admite voto."""
+        otra_votacion, otra_opcion = crear_votacion_extra(
+            self.edicion,
+            'Deportes',
+            'Mejor equipo',
+        )
+        otra_votacion.mostrar_resultados_en_vivo = True
+        otra_votacion.save(
+            update_fields=['mostrar_resultados_en_vivo'],
+        )
+
+        self.client.force_login(self.user)
+        self.client.post(reverse('votar', args=[self.votacion.pk]), {'opcion': self.cancion_a.pk})
+
+        respuesta = self.client.post(
+            reverse('votar', args=[otra_votacion.pk]), {'opcion': otra_opcion.pk}
+        )
+
+        self.assertRedirects(respuesta, reverse('resultados', args=[otra_votacion.pk]))
+        votos = Voto.objects.count()
+        self.assertEqual(votos, 2)
+        padrones_habilitados = PadronVotante.objects.filter(usuario=self.user, ha_votado=True)
+        self.assertEqual(padrones_habilitados.count(), 2)
+        self.assertEqual(
+            {p.categoria.nombre for p in padrones_habilitados},
+            {'Música', 'Deportes'},
+        )
+
     def test_no_permite_votar_una_opcion_de_otra_votacion(self):
         _, opcion_ajena = crear_votacion_extra(
             self.edicion,

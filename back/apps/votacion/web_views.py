@@ -1,7 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -102,32 +102,74 @@ def votar(request, pk):
 
     opcion = get_object_or_404(Opcion, pk=opcion_id, votacion=votacion)
 
-    with transaction.atomic():
-        padron, _ = PadronVotante.objects.get_or_create(
-            usuario=request.user,
-            votacion=votacion,
-        )
-
-        # Integridad frente a concurrencia: la reserva del voto se hace con
-        # un UPDATE condicional atómico. Si dos requests simultáneas pasan
-        # por aquí, solo una logra convertir ha_votado=False → True; la otra
-        # recibe 0 filas y es rechazada. Sin esta condición, dos lecturas
-        # concurrentes del flag podrían crear dos votos (la urna es anónima,
-        # así que no hay llave que lo impida en MySQL). La creación del voto
-        # queda dentro de la transacción: si falla, el rollback revierte la
-        # reserva y el votante puede reintentar sin problema.
-        reservados = PadronVotante.objects.filter(
-            pk=padron.pk,
-            ha_votado=False,
-        ).update(ha_votado=True)
-
-        if not reservados:
+    # Regla de unicidad (CP-02): un voto por usuario, categoría y edición,
+    # aunque la categoría tenga varias votaciones (subeventos). El chequeo
+    # amistoso da el mensaje claro antes de tocar la BD.
+    votados = PadronVotante.objects.filter(
+        usuario=request.user,
+        edicion=votacion.edicion,
+        categoria=votacion.categoria,
+        ha_votado=True,
+    )
+    if votados.exists():
+        if votados.filter(votacion=votacion).exists():
             messages.warning(request, 'Ya registraste tu voto en esta votación.')
-            return redirect('resultados', pk=pk)
+        else:
+            messages.warning(
+                request,
+                'Ya registraste tu voto en esta categoría; solo se emite un '
+                'voto por categoría dentro de la edición.',
+            )
+        return redirect('resultados', pk=pk)
 
-        voto = Voto.objects.create(opcion=opcion)
-        padron.hash_comprobante = voto.firma_criptografica
-        padron.save(update_fields=['hash_comprobante'])
+    try:
+        with transaction.atomic():
+            padron, _ = PadronVotante.objects.get_or_create(
+                usuario=request.user,
+                votacion=votacion,
+                defaults={
+                    'edicion': votacion.edicion,
+                    'categoria': votacion.categoria,
+                },
+            )
+
+            # Sincroniza la copia desnormalizada (filas legadas o precargadas
+            # sin la jerarquía) para que la constraint la contemple.
+            if padron.edicion_id != votacion.edicion_id or padron.categoria_id != votacion.categoria_id:
+                padron.edicion = votacion.edicion
+                padron.categoria = votacion.categoria
+                padron.save(update_fields=['edicion', 'categoria'])
+
+            # Integridad frente a concurrencia: la reserva del voto se hace con
+            # un UPDATE condicional atómico. Si dos requests simultáneas pasan
+            # por aquí, solo una logra convertir ha_votado=False → True; la otra
+            # recibe 0 filas y es rechazada. Sin esta condición, dos lecturas
+            # concurrentes del flag podrían crear dos votos (la urna es anónima,
+            # así que no hay llave que lo impida en MySQL). La creación del voto
+            # queda dentro de la transacción: si falla, el rollback revierte la
+            # reserva y el votante puede reintentar sin problema.
+            reservados = PadronVotante.objects.filter(
+                pk=padron.pk,
+                ha_votado=False,
+            ).update(ha_votado=True)
+
+            if not reservados:
+                messages.warning(request, 'Ya registraste tu voto en esta votación.')
+                return redirect('resultados', pk=pk)
+
+            voto = Voto.objects.create(opcion=opcion)
+            padron.hash_comprobante = voto.firma_criptografica
+            padron.save(update_fields=['hash_comprobante'])
+    except IntegrityError:
+        # CP-09 y CP-02 estricto: si dos requests simultáneas compitieron por
+        # la misma categoría (en esta u otra votación de la edición), la
+        # constraint de BD rechaza la segunda; queda el primer voto.
+        messages.warning(
+            request,
+            'Ya registraste tu voto en esta categoría; solo se emite un voto '
+            'por categoría dentro de la edición.',
+        )
+        return redirect('resultados', pk=pk)
 
     messages.success(request, 'Tu voto quedó registrado correctamente.')
     # Auditoría: se deja constancia de la participación, NUNCA de la
