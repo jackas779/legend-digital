@@ -3,34 +3,89 @@
 {% block title %}Ingresar — Sistema de Votación{% endblock %}
 
 {% block content %}
-  <div class="login-box">
-    <h1>Ingresar</h1>
-    <p class="lead">Usa tu correo, usuario o documento para entrar.</p>
+  <div class="login-shell">
+    <aside class="login-hero">
+      <div class="logo" aria-hidden="true">🪘</div>
+      <span class="kicker">Proceso electoral</span>
+      <h1>{% if edicion_destacada %}{{ edicion_destacada }}{% else %}Sistema de Votación{% endif %}</h1>
+      <p class="lead">
+        {% if edicion_destacada %}
+          Tu voto decide a los favoritos de esta edición: entra, elige tu
+          opción por categoría y confirma con tu comprobante.
+        {% else %}
+          Entra con tu cuenta para ver las ediciones disponibles y votar.
+        {% endif %}
+      </p>
+      <ul>
+        <li>✅ Ingresa con tu correo, usuario o documento</li>
+        <li>🗳️ Un solo voto por categoría dentro de la edición</li>
+        <li>📄 Confirma tu emisión con un comprobante verificable</li>
+      </ul>
+    </aside>
 
-    <form method="post" novalidate>
-      {% csrf_token %}
-      <input type="hidden" name="next" value="{{ next }}">
+    <div class="login-card">
+      <h2>Ingresar</h2>
+      <p class="lead">Escribe tus datos para entrar y votar.</p>
 
-      {% for field in form.visible_fields %}
+      {% if form.non_field_errors %}
+        <div class="alert-error">
+          {% for error in form.non_field_errors %}
+            <p>{{ error }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+
         <div>
-          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
-          {{ field }}
-          {% for error in field.errors %}
+          <label for="{{ form.identificador.id_for_label }}">{{ form.identificador.label }}</label>
+          {{ form.identificador }}
+          {% for error in form.identificador.errors %}
             <p class="errors">{{ error }}</p>
           {% endfor %}
         </div>
-      {% endfor %}
 
-      {% if form.non_field_errors %}
-        {% for error in form.non_field_errors %}
-          <p class="errors">{{ error }}</p>
-        {% endfor %}
-      {% endif %}
+        <div>
+          <label for="{{ form.password.id_for_label }}">{{ form.password.label }}</label>
+          <div class="clave-wrap">
+            {{ form.password }}
+            <button type="button" class="toggle-clave" data-toggle-clave aria-pressed="false">
+              Ver
+            </button>
+          </div>
+          {% for error in form.password.errors %}
+            <p class="errors">{{ error }}</p>
+          {% endfor %}
+        </div>
 
-      <button type="submit">Entrar</button>
-    </form>
+        <div class="recordar">
+          {{ form.recordarme }}
+          <label for="{{ form.recordarme.id_for_label }}">Mantener la sesión abierta</label>
+        </div>
 
-    <p>Aún no tienes cuenta: <a href="{% url 'registro' %}">regístrate</a>.</p>
-    <p><a href="{% url 'inicio' %}">← Volver al inicio</a></p>
+        <button type="submit">Entrar a votar</button>
+      </form>
+
+      <div class="pie">
+        Aún no tienes cuenta: <a href="{% url 'registro' %}">regístrate aquí</a>.
+      </div>
+    </div>
   </div>
+
+  <script>
+    // Alterna la visibilidad de la contraseña del formulario de login.
+    (function () {
+      const boton = document.querySelector('[data-toggle-clave]');
+      if (!boton) return;
+      const campo = boton.parentElement.querySelector('input[type="password"]');
+      boton.addEventListener('click', function () {
+        const ver = campo.getAttribute('type') === 'password';
+        campo.setAttribute('type', ver ? 'text' : 'password');
+        boton.textContent = ver ? 'Ocultar' : 'Ver';
+        boton.setAttribute('aria-pressed', String(ver));
+      });
+    })();
+  </script>
 {% endblock %}

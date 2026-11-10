@@ -9,6 +9,7 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from back.apps.auditoria.servicio import registrar_evento
+from back.apps.elecciones.models import Edicion
 from .forms import SesionForm
 
 DIAS_RECORDARME = 7
@@ -84,7 +85,17 @@ def acceder(request):
     return render(
         request,
         'registration/login.html',
-        {'form': form, 'next': destino or ''},
+        {
+            'form': form,
+            'next': destino or '',
+            # Edición activa con la votación lanzada más recientemente: da
+            # contexto real al panel de la izquierda del login.
+            'edicion_destacada': (
+                Edicion.objects.filter(estado='ACTIVA', votaciones__estado='ACTIVA')
+                .order_by('-votaciones__fecha_apertura')
+                .first()
+            ),
+        },
     )
 
 

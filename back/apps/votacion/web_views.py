@@ -20,32 +20,76 @@ def rol_del_usuario(user):
 
 
 def inicio(request):
-    """Listado de ediciones disponibles (Festival 2027, ...).
+    """Listado de ediciones disponibles (Leyenda Vallenata, Festival...).
 
-    Cada tarjeta resume cuántas categorías agrupa la edición y sus nombres,
-    para que se vea de un vistazo que una edición puede tener varias.
+    Calcula por edición: fechas del proceso, votaciones abiertas ahora y el
+    progreso personal (categorías en las que ya votó el usuario), para que
+    la pantalla de inicio muestre todo de un vistazo y con una edición
+    destacada que invite a entrar a votar.
     """
     ediciones = list(
         Edicion.objects
         .prefetch_related('votaciones__categoria')
         .order_by('-anio', 'nombre')
     )
+
+    # Progreso del votante: categorías en las que ya consumió su voto,
+    # agrupadas por edición.
+    votos_por_edicion = {}
+    if request.user.is_authenticated:
+        filas = PadronVotante.objects.filter(
+            usuario=request.user,
+            ha_votado=True,
+        ).values_list('votacion__edicion_id', 'categoria_id')
+        for edicion_id, categoria_id in filas:
+            votos_por_edicion.setdefault(edicion_id, set()).add(categoria_id)
+
     for edicion in ediciones:
-        nombres = sorted({v.categoria.nombre for v in edicion.votaciones.all()})
+        votaciones = list(edicion.votaciones.all())
+        aperturas = [v.fecha_apertura for v in votaciones]
+        cierres = [v.fecha_cierre for v in votaciones]
+        edicion.num_votaciones = len(votaciones)
+        edicion.num_abiertas = sum(1 for v in votaciones if v.esta_abierta)
+        edicion.fecha_inicio = min(aperturas) if aperturas else None
+        edicion.fecha_fin = max(cierres) if cierres else None
+        edicion.ultima_apertura = max(aperturas) if aperturas else None
+
+        nombres = sorted({v.categoria.nombre for v in votaciones})
         edicion.num_categorias = len(nombres)
         edicion.nombres_categorias = nombres
-    return render(request, 'votacion/inicio.html', {'ediciones': ediciones})
+
+        votadas = votos_por_edicion.get(edicion.pk, set())
+        edicion.categorias_votadas = len(votadas)
+
+    # Destacamos la edición cuya votación abierta se lanzó más recientemente,
+    # así el proceso en curso encabeza la pantalla aunque existan ediciones
+    # de años futuros o antiguas en paralelo.
+    candidatas = [e for e in ediciones if e.estado == 'ACTIVA' and e.num_abiertas]
+    destacada = (
+        max(candidatas, key=lambda e: e.ultima_apertura)
+        if candidatas
+        else next((e for e in ediciones if e.estado == 'ACTIVA'), None)
+    )
+
+    resto = [e for e in ediciones if e is not destacada]
+
+    return render(
+        request,
+        'votacion/inicio.html',
+        {'destacada': destacada, 'ediciones': resto, 'hay_ediciones': bool(ediciones)},
+    )
 
 
 def edicion_detalle(request, pk):
     """Categorías y votaciones de una edición, agrupadas por categoría.
 
     Para votantes autenticados marca qué votaciones (y qué categorías de
-    la edición) ya consumieron su voto, para que la regla
-    usuario → categoría → edición quede visible en la pantalla.
+    la edición) ya consumieron su voto, guarda el hash de su comprobante
+    y calcula fechas y votaciones abiertas, para que cada tarjeta muestre
+    una llamada a la acción clara: votar, ver su voto o ver resultados.
     """
     edicion = get_object_or_404(Edicion, pk=pk)
-    votaciones = (
+    votaciones = list(
         edicion.votaciones
         .select_related('categoria')
         .order_by('categoria__nombre', 'nombre')
@@ -53,14 +97,26 @@ def edicion_detalle(request, pk):
 
     ids_votaciones_votadas = set()
     ids_categorias_votadas = set()
+    comprobantes = {}
     if request.user.is_authenticated:
         filas = PadronVotante.objects.filter(
             usuario=request.user,
             votacion__edicion=edicion,
             ha_votado=True,
-        ).values_list('votacion_id', 'categoria_id')
+        ).values_list('votacion_id', 'categoria_id', 'hash_comprobante')
         ids_votaciones_votadas = {fila[0] for fila in filas}
         ids_categorias_votadas = {fila[1] for fila in filas}
+        comprobantes = {
+            fila[0]: fila[2] for fila in filas if fila[2]
+        }
+
+    # Datos de contexto para el encabezado y las tarjetas.
+    cierres = [v.fecha_cierre for v in votaciones]
+    edicion.num_abiertas = sum(1 for v in votaciones if v.esta_abierta)
+    edicion.fecha_fin = max(cierres) if cierres else None
+    edicion.num_categorias = len({v.categoria_id for v in votaciones})
+    for votacion in votaciones:
+        votacion.mi_comprobante = comprobantes.get(votacion.pk)
 
     return render(
         request,
