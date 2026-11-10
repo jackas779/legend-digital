@@ -71,13 +71,61 @@ def inicio(request):
         else next((e for e in ediciones if e.estado == 'ACTIVA'), None)
     )
 
-    resto = [e for e in ediciones if e is not destacada]
+    # El resto se agrupa por momento del proceso. Los borradores no se
+    # muestran al público: aún se están armando en gestión.
+    resto = [e for e in ediciones if e is not destacada and e.estado != 'BORRADOR']
+    en_curso = [e for e in resto if e.estado in ('ACTIVA', 'CERRANDO')]
+    proximas = [e for e in resto if e.estado == 'PROGRAMADA']
+    anteriores = [e for e in resto if e.estado == 'FINALIZADA']
 
     return render(
         request,
         'votacion/inicio.html',
-        {'destacada': destacada, 'ediciones': resto, 'hay_ediciones': bool(ediciones)},
+        {
+            'destacada': destacada,
+            'lideres': _lideres_en_vivo(destacada) if destacada else [],
+            'votos_destacada': (
+                Voto.objects.filter(opcion__votacion__edicion=destacada).count()
+                if destacada else 0
+            ),
+            'en_curso': en_curso,
+            'proximas': proximas,
+            'anteriores': anteriores,
+            'hay_ediciones': bool(ediciones),
+        },
     )
+
+
+def _lideres_en_vivo(edicion):
+    """Quién va primero en cada votación con resultados en vivo.
+
+    Solo se nombra un líder cuando la ventaja es clara (sin empate en el
+    primer lugar) y nunca el voto en blanco.
+    """
+    lideres = []
+    votaciones = (
+        edicion.votaciones
+        .filter(mostrar_resultados_en_vivo=True, estado='ACTIVA')
+        .select_related('categoria')
+        .order_by('categoria__nombre')
+    )
+    for votacion in votaciones:
+        opciones = list(
+            votacion.opciones.annotate(total=Count('votos')).order_by('-total', 'orden')
+        )
+        total = sum(o.total for o in opciones)
+        candidatas = [o for o in opciones if not o.es_voto_blanco]
+        if not total or not candidatas:
+            continue
+        primera = candidatas[0]
+        if len(candidatas) > 1 and candidatas[1].total == primera.total:
+            continue
+        lideres.append({
+            'votacion': votacion,
+            'opcion': primera,
+            'porcentaje': round(primera.total * 100 / total),
+        })
+    return lideres
 
 
 def edicion_detalle(request, pk):
@@ -298,10 +346,18 @@ def resultados(request, pk):
     for opcion in opciones:
         opcion.porcentaje = round(opcion.total * 100 / total, 1) if total else 0
 
+    # Primer lugar sin empate (el voto en blanco no "gana").
+    candidatas = [o for o in opciones if not o.es_voto_blanco]
+    lider = None
+    if total and candidatas and (
+        len(candidatas) == 1 or candidatas[0].total > candidatas[1].total
+    ):
+        lider = candidatas[0]
+
     return render(
         request,
         'votacion/resultados.html',
-        {'votacion': votacion, 'opciones': opciones, 'total': total},
+        {'votacion': votacion, 'opciones': opciones, 'total': total, 'lider': lider},
     )
 
 

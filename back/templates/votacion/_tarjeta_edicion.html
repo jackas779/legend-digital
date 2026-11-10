@@ -1,0 +1,28 @@
+{% comment %}Tarjeta de una edición en el inicio. Recibe ``edicion``.{% endcomment %}
+<a class="card tarjeta" href="{% url 'edicion-detalle' edicion.pk %}">
+  <div class="tarjeta-titulo">
+    <strong>{{ edicion }}</strong>
+    {% if edicion.num_abiertas %}
+      <span class="badge activa">{{ edicion.num_abiertas }} abierta{{ edicion.num_abiertas|pluralize }}</span>
+    {% else %}
+      <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
+    {% endif %}
+  </div>
+  {% if edicion.nombres_categorias %}
+    <div class="meta">{{ edicion.nombres_categorias|join:" · " }}</div>
+  {% endif %}
+  <div class="meta">
+    {% if edicion.fecha_inicio and edicion.fecha_fin %}
+      {% if edicion.estado == 'PROGRAMADA' %}Abre el {{ edicion.fecha_inicio|date:"j b Y" }}{% else %}{{ edicion.fecha_inicio|date:"j b Y" }} a {{ edicion.fecha_fin|date:"j b Y" }}{% endif %} ·
+    {% endif %}
+    {{ edicion.num_votaciones }} votaci{{ edicion.num_votaciones|pluralize:"ón,ones" }}
+  </div>
+  {% if rol_actual == 'Votante' and edicion.categorias_votadas > 0 %}
+    <div><span class="badge votada">Votaste en {{ edicion.categorias_votadas }} categoría{{ edicion.categorias_votadas|pluralize }}</span></div>
+  {% endif %}
+  <div class="cta">
+    <span class="enlace" style="color:var(--accent)">
+      {% if edicion.estado == 'FINALIZADA' %}Ver resultados →{% elif edicion.estado == 'PROGRAMADA' %}Ver detalles →{% else %}Ir a votar →{% endif %}
+    </span>
+  </div>
+</a>

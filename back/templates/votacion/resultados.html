@@ -7,12 +7,23 @@
     <p class="crumbs"><a href="{% url 'edicion-detalle' votacion.edicion.pk %}">← {{ votacion.edicion }}</a></p>
 
     <h1>{{ votacion.nombre }}</h1>
-    <p class="lead">Resultados · {{ votacion.categoria }}</p>
+    <p class="lead">
+      Resultados · {{ votacion.categoria }}
+      {% if votacion.estado == 'FINALIZADA' %}<span class="badge finalizada">Resultado final</span>{% elif votacion.esta_abierta %}<span class="badge activa"><span class="punto-vivo" aria-hidden="true"></span> En vivo</span>{% endif %}
+    </p>
 
     <p class="total-votos"><strong>{{ total }}</strong> voto{{ total|pluralize }} registrado{{ total|pluralize }}</p>
 
+    {% if lider %}
+      <div class="lider-banner">
+        <span class="meta">{% if votacion.estado == 'FINALIZADA' %}Ganador{% else %}Va primero{% endif %}</span>
+        <strong>{{ lider.nombre }}</strong>
+        {% if lider.subtitulo %}<span class="meta">{{ lider.subtitulo }}</span>{% endif %}
+      </div>
+    {% endif %}
+
     {% for opcion in opciones %}
-      <div class="bar-row">
+      <div class="bar-row{% if opcion == lider %} es-lider{% endif %}">
         <div class="bar-head">
           <span>{{ opcion.nombre }}</span>
           <span class="votos">{{ opcion.total }} · {{ opcion.porcentaje }}%</span>

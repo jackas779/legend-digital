@@ -471,6 +471,44 @@
     .clave-wrap .toggle-clave:hover { background: var(--accent-soft); color: var(--accent-dark); }
     .login-card .pie { border-top: 1px solid var(--line); margin-top: 1.1rem; padding-top: .9rem; font-size: .92rem; color: var(--muted); }
 
+    /* ====== Inicio: edición principal y resultados en vivo ====== */
+    .hero-principal { padding-block: clamp(1.75rem, 5vw, 3rem); }
+    .hero-principal h1 { font-size: clamp(2.1rem, 6vw, 3.4rem); }
+    .hero-cifras { display: flex; flex-direction: column; align-items: stretch; gap: .75rem; align-self: center; }
+    .hero-cifras .hero-dato { align-self: stretch; }
+    .button.ghost.en-oscuro { color: #fff; border-color: rgba(255, 255, 255, .4); }
+    .button.ghost.en-oscuro:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+    .seccion-head { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin: 0 0 .9rem; }
+    .seccion-head h2 { margin: 0; }
+    .en-vivo { margin-bottom: 1rem; }
+    .punto-vivo {
+      display: inline-block;
+      width: .5rem; height: .5rem;
+      border-radius: 50%;
+      background: var(--ok);
+      margin-right: .2rem;
+      vertical-align: middle;
+      animation: latido 1.6s ease-in-out infinite;
+    }
+    @keyframes latido { 50% { opacity: .3; } }
+    a.card.lider { display: flex; flex-direction: column; gap: .35rem; }
+    .lider strong { font-size: 1.1rem; }
+    .lider .bar { height: 8px; }
+    .lider .bar > span { background: var(--sun); }
+    .lider-banner {
+      display: flex;
+      flex-direction: column;
+      gap: .1rem;
+      background: var(--sun-soft);
+      border-left: 5px solid var(--sun);
+      border-radius: 10px;
+      padding: .8rem 1rem;
+      margin: 0 0 1.5rem;
+    }
+    .lider-banner strong { font-family: var(--titulos); font-size: 1.35rem; }
+    .bar-row.es-lider .bar-head span:first-child { font-weight: 700; }
+    .bar-row.es-lider .bar > span { background: var(--sun); }
+
     /* ====== Categorías como columnas (página de edición) ====== */
     .categorias-grid {
       display: grid;
@@ -550,8 +588,11 @@
       .hero-dato strong { font-size: 1.7rem; }
       .barra-voto button { width: 100%; }
     }
+    @media (max-width: 720px) {
+      .hero-cifras { flex-direction: row; flex-wrap: wrap; align-self: flex-start; }
+    }
     @media (prefers-reduced-motion: reduce) {
-      * { transition: none !important; }
+      * { transition: none !important; animation: none !important; }
     }
   </style>
 </head>

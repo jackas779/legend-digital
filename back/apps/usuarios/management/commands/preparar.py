@@ -11,8 +11,7 @@ existe simplemente la usa sin tocar su contenido.
 
 import re
 
-import MySQLdb
-from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, OperationalError
@@ -42,6 +41,9 @@ def _asegurar_mysql(self):
             # No coincide la clave o el servidor está apagado, etc.: es error real.
             raise
 
+    # Import local: con SQLite no se necesita el conector de MySQL instalado.
+    import MySQLdb
+
     db = MySQLdb.connect(
         host=configuracion['HOST'],
         port=int(configuracion['PORT']),
@@ -59,6 +61,38 @@ def _asegurar_mysql(self):
         f'Base de datos MySQL "{nombre}" creada (no existía). Si ya tenía '
         'datos, revise que sea la correcta.'
     ))
+
+
+# Votantes de demo con nombre realista que crea la simulación.
+VOTANTES_DEMO = 120
+
+# Votos ya emitidos por las cuentas de prueba (documento, votación, orden de
+# la opción), para que su historial y sus comprobantes se vean desde el inicio.
+VOTOS_CUENTAS_DEMO = [
+    ('1015487962', 'Canción favorita del público', 1),  # Cardina
+    ('1015987412', 'Canción favorita del público', 2),  # Sofía
+]
+
+
+def _votos_cuentas_demo(self):
+    """Emite los votos de las cuentas de prueba que aún no hayan votado."""
+    from back.apps.elecciones.models import Opcion
+    from back.apps.votacion.management.commands.simular_votacion import emitir_voto
+
+    User = get_user_model()
+    for documento, nombre_votacion, orden in VOTOS_CUENTAS_DEMO:
+        user = User.objects.filter(perfil_usuario__documento=documento).first()
+        opcion = (
+            Opcion.objects.select_related('votacion')
+            .filter(
+                votacion__nombre=nombre_votacion,
+                votacion__edicion__nombre='Festival 2027',
+                orden=orden,
+            )
+            .first()
+        )
+        if user and opcion:
+            emitir_voto(user, opcion)
 
 
 class Command(BaseCommand):
@@ -91,14 +125,20 @@ class Command(BaseCommand):
         self.stdout.write('Permisos...')
         call_command('cargar_permisos')
 
-        self.stdout.write('Escenario de demo...')
+        self.stdout.write('Escenario de demo: Festival 2027...')
         call_command('cargar_demo')
+
+        self.stdout.write('Escenario de demo: Festival de la Leyenda Vallenata...')
+        call_command('cargar_leyenda')
 
         self.stdout.write('Cuentas de prueba...')
         call_command('cargar_usuarios_demo')
 
-        self.stdout.write('Datos de votación simulados...')
-        call_command('simular_votacion')
+        self.stdout.write('Votos de las cuentas de prueba...')
+        _votos_cuentas_demo(self)
+
+        self.stdout.write('Datos de votación simulados en todas las votaciones...')
+        call_command('simular_votacion', todas=True, votantes=VOTANTES_DEMO)
 
         self.stdout.write('')
         self.stdout.write(self.style.SUCCESS(
@@ -108,7 +148,9 @@ class Command(BaseCommand):
         self.stdout.write('  Organizador    100200301 / org123')
         self.stdout.write('  Votante        1015487962 / voto123')
         self.stdout.write('  Auditor        100200302 / aud123')
-        self.stdout.write('  Votantes demo  90XXXXXXXX  / voto123 (40 cuentas)')
+        self.stdout.write(
+            f'  Votantes demo  90XXXXXXXX  / voto123 ({VOTANTES_DEMO} cuentas)'
+        )
         self.stdout.write('')
         self.stdout.write('Para empezar:')
         self.stdout.write('  python manage.py runserver')
