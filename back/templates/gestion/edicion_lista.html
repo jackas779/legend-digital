@@ -16,15 +16,15 @@
     {% for edicion in ediciones %}
       <article class="card tarjeta" data-estado="{{ edicion.estado }}">
         <div class="tarjeta-titulo">
-          <strong>{{ edicion }}</strong>
+          <strong><a href="{% url 'gestion:edicion_gestionar' edicion.id %}" class="enlace-titulo">{{ edicion }}</a></strong>
           <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
         </div>
         <div class="cifras">
           <div><b class="cifra">{{ edicion.num_votaciones }}</b><span>votaci{{ edicion.num_votaciones|pluralize:"ón,ones" }}</span></div>
         </div>
         <div class="acciones">
-          <a class="button ghost mini" href="{% url 'edicion-detalle' edicion.id %}">Ver</a>
-          <a class="button ghost mini" href="{% url 'gestion:edicion_editar' edicion.id %}">Editar</a>
+          <a class="button mini" href="{% url 'gestion:edicion_gestionar' edicion.id %}">Gestionar</a>
+          <a class="button ghost mini" href="{% url 'edicion-detalle' edicion.id %}">Ver como votante</a>
           {% if edicion.estado == 'BORRADOR' or edicion.estado == 'PROGRAMADA' %}
             <form method="post" action="{% url 'gestion:edicion_publicar' edicion.id %}">
               {% csrf_token %}

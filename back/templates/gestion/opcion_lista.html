@@ -4,7 +4,7 @@
 
 {% block content %}
 
-  <p class="crumbs"><a href="{% url 'gestion:votaciones' %}">← Votaciones</a></p>
+  <p class="crumbs"><a href="{% url 'gestion:edicion_gestionar' votacion.edicion.id %}">← {{ votacion.edicion }}</a></p>
 
   <div class="pagina-head">
     <div>

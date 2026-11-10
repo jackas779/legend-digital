@@ -5,14 +5,42 @@ bloqueo de borrados y las transiciones de estado se validan aquí.
 """
 
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from back.apps.auditoria.servicio import registrar_evento
 from back.apps.usuarios.permisos import requiere_permiso, tiene_permiso
 
-from .gestion_forms import CategoriaForm, EdicionForm, OpcionForm, VotacionForm
+from .gestion_forms import (
+    CategoriaForm,
+    EdicionCategoriaForm,
+    EdicionForm,
+    OpcionForm,
+    VotacionForm,
+)
 from .models import Categoria, Edicion, Opcion, Votacion
+
+
+def _siguiente(request):
+    """URL interna a la que volver tras una acción (``?siguiente=``).
+
+    Permite que la pantalla de una edición recupere el control después de
+    crear, editar, abrir o cerrar una votación. Solo acepta rutas de este
+    mismo sitio, para no abrir una redirección a otro dominio.
+    """
+    destino = request.POST.get('siguiente') or request.GET.get('siguiente') or ''
+    if destino and url_has_allowed_host_and_scheme(
+        destino, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return destino
+    return ''
+
+
+def _volver(request, por_defecto, *args):
+    """Redirige a ``siguiente`` si es válido; si no, a la ruta por defecto."""
+    return redirect(_siguiente(request) or por_defecto, *args)
 
 
 # --------------------------------------------------------------------------
@@ -59,12 +87,135 @@ def edicion_editar(request, edicion_id):
         form.save()
         registrar_evento(request, 'ediciones', 'edicion_actualizada', {'id': edicion_id})
         messages.success(request, f'Edición «{edicion}» actualizada.')
-        return redirect('gestion:ediciones')
+        return _volver(request, 'gestion:ediciones')
 
     return render(
         request,
         'gestion/edicion_form.html',
-        {'form': form, 'titulo': f'Editar {edicion}', 'edicion': edicion},
+        {
+            'form': form,
+            'titulo': f'Editar {edicion}',
+            'edicion': edicion,
+            'siguiente': _siguiente(request),
+        },
+    )
+
+
+@requiere_permiso('ediciones.ver')
+def edicion_gestionar(request, edicion_id):
+    """Panel de una edición: sus categorías, votaciones y acciones.
+
+    Una categoría forma parte de la edición cuando la edición tiene al menos
+    una votación en ella. Desde aquí se agregan categorías (creando su
+    votación) y se quitan las que aún no tienen votos.
+    """
+    edicion = get_object_or_404(Edicion, pk=edicion_id)
+    puede_agregar = tiene_permiso(request.user, 'votaciones.crear')
+    puede_crear_categoria = tiene_permiso(request.user, 'categorias.crear')
+
+    form = None
+    if puede_agregar:
+        form = EdicionCategoriaForm(
+            data=request.POST or None,
+            edicion=edicion,
+            puede_crear_categoria=puede_crear_categoria,
+        )
+        if request.method == 'POST' and form.is_valid():
+            datos = form.cleaned_data
+            with transaction.atomic():
+                categoria = datos['categoria']
+                if categoria is None:
+                    categoria = Categoria.objects.create(nombre=datos['nueva_categoria'])
+                    registrar_evento(
+                        request, 'categorias', 'categoria_creada', {'id': categoria.id}
+                    )
+                votacion = Votacion.objects.create(
+                    edicion=edicion,
+                    categoria=categoria,
+                    nombre=datos['nombre_votacion'].strip(),
+                    fecha_apertura=datos['fecha_apertura'],
+                    fecha_cierre=datos['fecha_cierre'],
+                    estado='BORRADOR',
+                    mostrar_resultados_en_vivo=True,
+                )
+            registrar_evento(request, 'votaciones', 'votacion_creada', {'id': votacion.id})
+            messages.success(
+                request,
+                f'«{categoria.nombre}» ya forma parte de {edicion}. Agrega las '
+                f'opciones de «{votacion.nombre}» y ábrela cuando esté lista.',
+            )
+            return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
+
+    votaciones = list(
+        edicion.votaciones.select_related('categoria')
+        .annotate(
+            num_votos=Count('opciones__votos', distinct=True),
+            num_opciones=Count('opciones', distinct=True),
+        )
+        .order_by('categoria__nombre', 'nombre')
+    )
+
+    return render(
+        request,
+        'gestion/edicion_gestionar.html',
+        {
+            'edicion': edicion,
+            'votaciones': votaciones,
+            'num_categorias': len({v.categoria_id for v in votaciones}),
+            'total_votos': sum(v.num_votos for v in votaciones),
+            'form': form,
+            'puede_editar': tiene_permiso(request.user, 'ediciones.editar'),
+            'puede_editar_votaciones': tiene_permiso(request.user, 'votaciones.editar'),
+            'puede_quitar': tiene_permiso(request.user, 'votaciones.eliminar'),
+        },
+    )
+
+
+@requiere_permiso('votaciones.eliminar')
+def edicion_quitar_categoria(request, edicion_id, categoria_id):
+    """Quita una categoría de la edición borrando sus votaciones.
+
+    Se bloquea si alguna de esas votaciones ya tiene votos: el conteo debe
+    conservarse. La categoría en sí no se borra; sigue disponible para otras
+    ediciones.
+    """
+    edicion = get_object_or_404(Edicion, pk=edicion_id)
+    categoria = get_object_or_404(Categoria, pk=categoria_id)
+    votaciones = list(edicion.votaciones.filter(categoria=categoria))
+    con_votos = [v for v in votaciones if v.total_votos > 0]
+
+    if not votaciones:
+        messages.warning(request, f'«{categoria.nombre}» no forma parte de {edicion}.')
+        return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
+
+    if request.method == 'POST':
+        if con_votos:
+            messages.error(
+                request,
+                f'No se puede quitar «{categoria.nombre}»: sus votaciones ya '
+                'registran votos.',
+            )
+        else:
+            for votacion in votaciones:
+                votacion.delete()
+            registrar_evento(
+                request,
+                'ediciones',
+                'categoria_quitada',
+                {'edicion': edicion.id, 'categoria': categoria.id},
+            )
+            messages.success(request, f'«{categoria.nombre}» se quitó de {edicion}.')
+        return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
+
+    return render(
+        request,
+        'gestion/edicion_quitar_categoria.html',
+        {
+            'edicion': edicion,
+            'categoria': categoria,
+            'votaciones': votaciones,
+            'con_votos': con_votos,
+        },
     )
 
 
@@ -113,7 +264,7 @@ def edicion_publicar(request, edicion_id):
         else:
             messages.warning(request, f'La edición ya está en estado {edicion.estado}.')
 
-    return redirect('gestion:ediciones')
+    return _volver(request, 'gestion:ediciones')
 
 
 @requiere_permiso('ediciones.editar')
@@ -130,7 +281,7 @@ def edicion_finalizar(request, edicion_id):
             registrar_evento(request, 'ediciones', 'edicion_finalizada', {'id': edicion_id})
             messages.success(request, f'Edición «{edicion}» finalizada.')
 
-    return redirect('gestion:ediciones')
+    return _volver(request, 'gestion:ediciones')
 
 
 # --------------------------------------------------------------------------
@@ -253,19 +404,28 @@ def votacion_lista(request):
 
 @requiere_permiso('votaciones.crear')
 def votacion_crear(request):
-    """VO2: alta con selects de edición y categoría."""
-    form = VotacionForm(data=request.POST or None)
+    """VO2: alta con selects de edición y categoría.
+
+    ``?edicion=`` y ``?categoria=`` preseleccionan los selects cuando se
+    llega desde el panel de una edición.
+    """
+    inicial = {
+        campo: request.GET[campo]
+        for campo in ('edicion', 'categoria')
+        if request.GET.get(campo, '').isdigit()
+    }
+    form = VotacionForm(data=request.POST or None, initial=inicial)
 
     if request.method == 'POST' and form.is_valid():
         votacion = form.save()
         registrar_evento(request, 'votaciones', 'votacion_creada', {'id': votacion.id})
         messages.success(request, f'Votación «{votacion.nombre}» creada.')
-        return redirect('gestion:votaciones')
+        return _volver(request, 'gestion:votaciones')
 
     return render(
         request,
         'gestion/votacion_form.html',
-        {'form': form, 'titulo': 'Nueva votación'},
+        {'form': form, 'titulo': 'Nueva votación', 'siguiente': _siguiente(request)},
     )
 
 
@@ -279,12 +439,17 @@ def votacion_editar(request, votacion_id):
         form.save()
         registrar_evento(request, 'votaciones', 'votacion_actualizada', {'id': votacion_id})
         messages.success(request, f'Votación «{votacion.nombre}» actualizada.')
-        return redirect('gestion:votaciones')
+        return _volver(request, 'gestion:votaciones')
 
     return render(
         request,
         'gestion/votacion_form.html',
-        {'form': form, 'titulo': f'Editar {votacion}', 'votacion': votacion},
+        {
+            'form': form,
+            'titulo': f'Editar {votacion}',
+            'votacion': votacion,
+            'siguiente': _siguiente(request),
+        },
     )
 
 
@@ -304,7 +469,7 @@ def votacion_abrir(request, votacion_id):
         else:
             messages.warning(request, f'La votación ya está en estado {votacion.estado}.')
 
-    return redirect('gestion:votaciones')
+    return _volver(request, 'gestion:votaciones')
 
 
 @requiere_permiso('votaciones.editar')
@@ -326,7 +491,7 @@ def votacion_cerrar(request, votacion_id):
                 'conservan y los resultados quedan visibles.',
             )
 
-    return redirect('gestion:votaciones')
+    return _volver(request, 'gestion:votaciones')
 
 
 # --------------------------------------------------------------------------

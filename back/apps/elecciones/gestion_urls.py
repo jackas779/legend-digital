@@ -10,6 +10,16 @@ urlpatterns = [
     path('ediciones/', gestion_views.edicion_lista, name='ediciones'),
     path('ediciones/nueva/', gestion_views.edicion_crear, name='edicion_crear'),
     path(
+        'ediciones/<int:edicion_id>/',
+        gestion_views.edicion_gestionar,
+        name='edicion_gestionar',
+    ),
+    path(
+        'ediciones/<int:edicion_id>/categorias/<int:categoria_id>/quitar/',
+        gestion_views.edicion_quitar_categoria,
+        name='edicion_quitar_categoria',
+    ),
+    path(
         'ediciones/<int:edicion_id>/editar/',
         gestion_views.edicion_editar,
         name='edicion_editar',

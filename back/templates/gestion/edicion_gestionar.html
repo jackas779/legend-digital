@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ edicion }} — Gestión{% endblock %}
+
+{% block content %}
+  {% url 'gestion:edicion_gestionar' edicion.id as aqui %}
+
+  <p class="crumbs"><a href="{% url 'gestion:ediciones' %}">← Ediciones</a></p>
+
+  <header class="panel-edicion">
+    <div class="panel-edicion-texto">
+      <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
+      <h1>{{ edicion }}</h1>
+      <div class="cifras">
+        <div><b class="cifra">{{ num_categorias }}</b><span>categoría{{ num_categorias|pluralize }}</span></div>
+        <div><b class="cifra">{{ votaciones|length }}</b><span>votaci{{ votaciones|length|pluralize:"ón,ones" }}</span></div>
+        <div><b class="cifra">{{ total_votos }}</b><span>voto{{ total_votos|pluralize }}</span></div>
+      </div>
+    </div>
+    <div class="acciones panel-edicion-acciones">
+      {% if puede_editar %}
+        <a class="button ghost mini" href="{% url 'gestion:edicion_editar' edicion.id %}?siguiente={{ aqui|urlencode }}">Editar nombre, año y estado</a>
+        {% if edicion.estado == 'BORRADOR' or edicion.estado == 'PROGRAMADA' %}
+          <form method="post" action="{% url 'gestion:edicion_publicar' edicion.id %}">
+            {% csrf_token %}<input type="hidden" name="siguiente" value="{{ aqui }}">
+            <button type="submit" class="mini">Publicar edición</button>
+          </form>
+        {% endif %}
+        {% if edicion.estado != 'FINALIZADA' %}
+          <form method="post" action="{% url 'gestion:edicion_finalizar' edicion.id %}">
+            {% csrf_token %}<input type="hidden" name="siguiente" value="{{ aqui }}">
+            <button type="submit" class="ghost mini">Finalizar edición</button>
+          </form>
+        {% endif %}
+      {% endif %}
+      <a class="button ghost mini" href="{% url 'edicion-detalle' edicion.id %}">Ver como votante</a>
+    </div>
+  </header>
+
+  <div class="seccion-head">
+    <h2>Categorías de la edición</h2>
+    {% if form %}<a class="button mini" href="#agregar-categoria">+ Agregar categoría</a>{% endif %}
+  </div>
+
+  {% regroup votaciones by categoria as grupos %}
+  {% if grupos %}
+    <div class="categorias-grid">
+      {% for grupo in grupos %}
+        <section class="grupo-categoria">
+          <div class="grupo-head">
+            <h2>{{ grupo.grouper }}</h2>
+          </div>
+          {% if grupo.grouper.descripcion %}<p class="desc">{{ grupo.grouper.descripcion }}</p>{% endif %}
+
+          <div class="lista-votaciones">
+            {% for votacion in grupo.list %}
+              <article class="card tarjeta">
+                <div class="tarjeta-titulo">
+                  <strong>{{ votacion.nombre }}</strong>
+                  <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
+                </div>
+                <div class="meta">{{ votacion.fecha_apertura|date:"j b Y, H:i" }} → {{ votacion.fecha_cierre|date:"j b Y, H:i" }}</div>
+                <div class="meta">
+                  {{ votacion.num_opciones }} opci{{ votacion.num_opciones|pluralize:"ón,ones" }} ·
+                  {{ votacion.num_votos }} voto{{ votacion.num_votos|pluralize }}
+                </div>
+                {% if not votacion.num_opciones %}
+                  <p class="aviso">Sin opciones todavía: agrega candidatos para poder abrirla.</p>
+                {% endif %}
+                <div class="acciones">
+                  <a class="button mini" href="{% url 'gestion:opcion_lista' votacion.id %}">Opciones</a>
+                  {% if puede_editar_votaciones %}
+                    <a class="button ghost mini" href="{% url 'gestion:votacion_editar' votacion.id %}?siguiente={{ aqui|urlencode }}">Editar</a>
+                    {% if votacion.estado == 'BORRADOR' or votacion.estado == 'PROGRAMADA' %}
+                      <form method="post" action="{% url 'gestion:votacion_abrir' votacion.id %}">
+                        {% csrf_token %}<input type="hidden" name="siguiente" value="{{ aqui }}">
+                        <button type="submit" class="ghost mini">Abrir</button>
+                      </form>
+                    {% endif %}
+                    {% if votacion.estado != 'FINALIZADA' %}
+                      <form method="post" action="{% url 'gestion:votacion_cerrar' votacion.id %}">
+                        {% csrf_token %}<input type="hidden" name="siguiente" value="{{ aqui }}">
+                        <button type="submit" class="ghost mini">Cerrar</button>
+                      </form>
+                    {% endif %}
+                  {% endif %}
+                </div>
+              </article>
+            {% endfor %}
+          </div>
+
+          <div class="pie-categoria">
+            {% if form %}
+              <a href="{% url 'gestion:votacion_crear' %}?edicion={{ edicion.id }}&categoria={{ grupo.grouper.id }}&siguiente={{ aqui|urlencode }}">+ Otra votación en {{ grupo.grouper }}</a>
+            {% endif %}
+            {% if puede_quitar %}
+              <a class="texto-peligro" href="{% url 'gestion:edicion_quitar_categoria' edicion.id grupo.grouper.id %}">Quitar de la edición</a>
+            {% endif %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="empty">Esta edición todavía no tiene categorías. Agrega la primera abajo.</p>
+  {% endif %}
+
+  {% if form %}
+    <section class="panel-form agregar-categoria" id="agregar-categoria" aria-labelledby="titulo-agregar">
+      <h2 id="titulo-agregar">Agregar una categoría</h2>
+      <p class="lead">Elige una categoría que ya exista o crea una nueva. Se crea su votación
+        en borrador: después agregas las opciones y la abres.</p>
+
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% for error in form.non_field_errors %}
+          <div class="alert-error" role="alert"><p>{{ error }}</p></div>
+        {% endfor %}
+
+        <div class="campos-dos">
+          <div class="campo">
+            <label for="{{ form.categoria.id_for_label }}">{{ form.categoria.label }}</label>
+            {{ form.categoria }}
+            {% for error in form.categoria.errors %}<p class="errors">{{ error }}</p>{% endfor %}
+          </div>
+          <div class="campo">
+            <label for="{{ form.nueva_categoria.id_for_label }}">{{ form.nueva_categoria.label }}</label>
+            {{ form.nueva_categoria }}
+            <p class="ayuda">{{ form.nueva_categoria.help_text }}</p>
+            {% for error in form.nueva_categoria.errors %}<p class="errors">{{ error }}</p>{% endfor %}
+          </div>
+        </div>
+
+        <div class="campo">
+          <label for="{{ form.nombre_votacion.id_for_label }}">{{ form.nombre_votacion.label }}</label>
+          {{ form.nombre_votacion }}
+          <p class="ayuda">{{ form.nombre_votacion.help_text }}</p>
+          {% for error in form.nombre_votacion.errors %}<p class="errors">{{ error }}</p>{% endfor %}
+        </div>
+
+        <div class="campos-dos">
+          <div class="campo">
+            <label for="{{ form.fecha_apertura.id_for_label }}">{{ form.fecha_apertura.label }}</label>
+            {{ form.fecha_apertura }}
+            {% for error in form.fecha_apertura.errors %}<p class="errors">{{ error }}</p>{% endfor %}
+          </div>
+          <div class="campo">
+            <label for="{{ form.fecha_cierre.id_for_label }}">{{ form.fecha_cierre.label }}</label>
+            {{ form.fecha_cierre }}
+            {% for error in form.fecha_cierre.errors %}<p class="errors">{{ error }}</p>{% endfor %}
+          </div>
+        </div>
+
+        <div class="acciones-form">
+          <button type="submit">Agregar a la edición</button>
+        </div>
+      </form>
+    </section>
+  {% endif %}
+{% endblock %}

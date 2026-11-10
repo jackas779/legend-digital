@@ -1,0 +1,29 @@
+{% extends 'base.html' %}
+
+{% block title %}Quitar categoría — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <div class="panel-form">
+    <h1>Quitar «{{ categoria.nombre }}»</h1>
+    <p class="lead">De la edición {{ edicion }}.</p>
+
+    {% if con_votos %}
+      <p class="msg error">
+        No se puede quitar: estas votaciones ya registran votos y el conteo debe conservarse:
+        {% for v in con_votos %}{{ v.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+      </p>
+      <a href="{% url 'gestion:edicion_gestionar' edicion.id %}" class="button">Volver</a>
+    {% else %}
+      <p class="msg warning">
+        Se borrará{{ votaciones|length|pluralize:",n" }} {{ votaciones|length }} votaci{{ votaciones|length|pluralize:"ón,ones" }} con sus opciones:
+        {% for v in votaciones %}{{ v.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+        La categoría sigue disponible para otras ediciones.
+      </p>
+      <form method="post" class="acciones-form">
+        {% csrf_token %}
+        <button type="submit" class="peligro">Sí, quitar de la edición</button>
+        <a href="{% url 'gestion:edicion_gestionar' edicion.id %}" class="button ghost">Cancelar</a>
+      </form>
+    {% endif %}
+  </div>
+{% endblock %}

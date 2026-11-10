@@ -345,6 +345,146 @@ class GestionEdicionesTests(TestCase):
         self.assertEqual(edicion.estado, 'ACTIVA')
 
 
+class GestionarEdicionTests(TestCase):
+    """Panel de una edición: agregar y quitar categorías de la edición."""
+
+    # Reutiliza los auxiliares sin heredar (y repetir) las pruebas de ED1-ED4.
+    _sesion = GestionEdicionesTests._sesion
+    _edicion = GestionEdicionesTests._edicion
+
+    def setUp(self):
+        GestionEdicionesTests.setUp(self)
+        from back.apps.elecciones.models import Categoria
+
+        self._sesion(self.rol_organizador)
+        self.edicion = self._edicion(estado='ACTIVA')
+        self.musica = Categoria.objects.create(nombre='Música')
+        self.url = reverse('gestion:edicion_gestionar', args=[self.edicion.id])
+        self.fechas = {
+            'fecha_apertura': '2027-04-26T09:00',
+            'fecha_cierre': '2027-04-30T18:00',
+        }
+
+    def _votacion(self, categoria, nombre='Canción del año'):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from back.apps.elecciones.models import Votacion
+
+        ahora = timezone.now()
+        return Votacion.objects.create(
+            edicion=self.edicion,
+            categoria=categoria,
+            nombre=nombre,
+            fecha_apertura=ahora,
+            fecha_cierre=ahora + timedelta(days=1),
+            estado='ACTIVA',
+        )
+
+    def test_panel_muestra_las_categorias_de_la_edicion(self):
+        self._votacion(self.musica)
+
+        respuesta = self.client.get(self.url)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, 'Música')
+        self.assertContains(respuesta, 'Canción del año')
+        self.assertEqual(respuesta.context['num_categorias'], 1)
+
+    def test_votante_no_entra_al_panel(self):
+        self.client.logout()
+        self._sesion(self.rol_votante)
+
+        respuesta = self.client.get(self.url)
+
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_agregar_categoria_existente_crea_su_votacion_en_borrador(self):
+        respuesta = self.client.post(self.url, {
+            'categoria': self.musica.id,
+            'nombre_votacion': 'Canción del año',
+            **self.fechas,
+        })
+
+        self.assertRedirects(respuesta, self.url)
+        votacion = self.edicion.votaciones.get()
+        self.assertEqual(votacion.categoria, self.musica)
+        self.assertEqual(votacion.estado, 'BORRADOR')
+
+    def test_agregar_categoria_nueva_la_crea(self):
+        from back.apps.elecciones.models import Categoria
+
+        self.client.post(self.url, {
+            'nueva_categoria': 'Piqueria',
+            'nombre_votacion': 'Rey de la Piqueria',
+            **self.fechas,
+        })
+
+        categoria = Categoria.objects.get(nombre='Piqueria')
+        self.assertTrue(self.edicion.votaciones.filter(categoria=categoria).exists())
+
+    def test_categoria_nueva_duplicada_da_error_legible(self):
+        respuesta = self.client.post(self.url, {
+            'nueva_categoria': 'música',
+            'nombre_votacion': 'Otra',
+            **self.fechas,
+        })
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, 'ya existe')
+        self.assertFalse(self.edicion.votaciones.exists())
+
+    def test_sin_categoria_ni_nueva_no_crea_nada(self):
+        respuesta = self.client.post(self.url, {'nombre_votacion': 'Sin categoría', **self.fechas})
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertFalse(self.edicion.votaciones.exists())
+
+    def test_quitar_categoria_sin_votos_borra_sus_votaciones(self):
+        self._votacion(self.musica)
+        url = reverse('gestion:edicion_quitar_categoria', args=[self.edicion.id, self.musica.id])
+
+        respuesta = self.client.post(url)
+
+        self.assertRedirects(respuesta, self.url)
+        self.assertFalse(self.edicion.votaciones.exists())
+        self.musica.refresh_from_db()  # La categoría sigue existiendo.
+
+    def test_quitar_categoria_con_votos_se_bloquea(self):
+        from back.apps.elecciones.models import Opcion
+        from back.apps.votacion.models import Voto
+
+        votacion = self._votacion(self.musica)
+        opcion = Opcion.objects.create(votacion=votacion, nombre='A', orden=1)
+        Voto.objects.create(opcion=opcion)
+        url = reverse('gestion:edicion_quitar_categoria', args=[self.edicion.id, self.musica.id])
+
+        self.client.post(url)
+
+        self.assertTrue(self.edicion.votaciones.exists())
+
+    def test_cerrar_votacion_vuelve_al_panel_de_la_edicion(self):
+        votacion = self._votacion(self.musica)
+
+        respuesta = self.client.post(
+            reverse('gestion:votacion_cerrar', args=[votacion.id]),
+            {'siguiente': self.url},
+        )
+
+        self.assertRedirects(respuesta, self.url)
+
+    def test_siguiente_externo_se_ignora(self):
+        votacion = self._votacion(self.musica)
+
+        respuesta = self.client.post(
+            reverse('gestion:votacion_cerrar', args=[votacion.id]),
+            {'siguiente': 'https://sitio-malicioso.example/'},
+        )
+
+        self.assertRedirects(respuesta, reverse('gestion:votaciones'))
+
+
 class GestionCategoriasTests(TestCase):
     """Entregables CA1-CA3: gestión MVT de categorías con permisos."""
 

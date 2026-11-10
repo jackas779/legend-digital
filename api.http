@@ -1,0 +1,63 @@
+### Pruebas de la API con la extensión REST Client de VS Code.
+### Antes: python manage.py runserver
+### Pulsa "Send Request" encima de cada petición.
+
+@base = http://127.0.0.1:8000
+@edicion = 8
+
+### -------------------------------------------------------------
+### API pública (no necesita token)
+### -------------------------------------------------------------
+
+### Todas las categorías con sus votaciones y opciones
+GET {{base}}/api/categorias/
+
+### Solo las categorías de una edición (cambia @edicion arriba)
+GET {{base}}/api/categorias/?edicion={{edicion}}
+
+
+### -------------------------------------------------------------
+### Login: ejecútalo primero; el token queda guardado en @token
+### El campo "correo" acepta correo, usuario o documento.
+### -------------------------------------------------------------
+
+# @name login
+POST {{base}}/api/usuarios/login/
+Content-Type: application/json
+
+{
+  "correo": "andres.catalan",
+  "password": "org123"
+}
+
+###
+@token = {{login.response.body.access}}
+
+
+### -------------------------------------------------------------
+### Consultas con token
+### -------------------------------------------------------------
+
+### Mi usuario
+GET {{base}}/api/usuarios/me/
+Authorization: Bearer {{token}}
+
+### Ediciones
+GET {{base}}/api/elecciones/ediciones/
+Authorization: Bearer {{token}}
+
+### Una edición
+GET {{base}}/api/elecciones/ediciones/{{edicion}}/
+Authorization: Bearer {{token}}
+
+### Categorías
+GET {{base}}/api/elecciones/categorias/
+Authorization: Bearer {{token}}
+
+### Votaciones
+GET {{base}}/api/elecciones/votaciones/
+Authorization: Bearer {{token}}
+
+### Opciones
+GET {{base}}/api/elecciones/opciones/
+Authorization: Bearer {{token}}

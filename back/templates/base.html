@@ -509,6 +509,39 @@
     .bar-row.es-lider .bar-head span:first-child { font-weight: 700; }
     .bar-row.es-lider .bar > span { background: var(--sun); }
 
+    /* ====== Gestión de una edición ====== */
+    .panel-edicion {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: clamp(1.25rem, 3vw, 1.75rem);
+      margin: 0 0 2rem;
+    }
+    .panel-edicion h1 { margin: .5rem 0 1rem; }
+    .panel-edicion-acciones { margin: 0; padding: 0; border: 0; justify-content: flex-end; }
+    .enlace-titulo { color: var(--text); text-decoration: none; }
+    .enlace-titulo:hover { color: var(--accent-dark); text-decoration: underline; }
+    .aviso { margin: .2rem 0 0; font-size: .85rem; color: var(--warn); background: var(--sun-soft); border-radius: 8px; padding: .4rem .6rem; }
+    .pie-categoria {
+      display: flex;
+      justify-content: space-between;
+      gap: .5rem 1rem;
+      flex-wrap: wrap;
+      font-size: .9rem;
+      font-weight: 600;
+      margin-top: 1rem;
+    }
+    .texto-peligro { color: var(--err); }
+    .texto-peligro:hover { color: #8c1d18; }
+    .agregar-categoria { max-width: none; margin-top: 2rem; scroll-margin-top: 1rem; }
+    .agregar-categoria h2 { margin-top: 0; }
+    .campos-dos { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 1.1rem; }
+
     /* ====== Categorías como columnas (página de edición) ====== */
     .categorias-grid {
       display: grid;
