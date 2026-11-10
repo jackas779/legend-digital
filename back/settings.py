@@ -159,6 +159,8 @@ SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_COOKIE_SAMESITE = 'Lax'
+# Token vencido (p. ej. login en otra pestaña): recarga el formulario con aviso.
+CSRF_FAILURE_VIEW = 'back.apps.usuarios.sesion_views.csrf_fallido'
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True

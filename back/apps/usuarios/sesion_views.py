@@ -7,6 +7,7 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.csrf import csrf_failure
 
 from back.apps.auditoria.servicio import registrar_evento
 from back.apps.elecciones.models import Edicion
@@ -100,6 +101,23 @@ def acceder(request):
 
 
 cerrar_sesion = vistas_auth.LogoutView.as_view()
+
+
+def csrf_fallido(request, reason=''):
+    """Token CSRF vencido en un formulario web: lo recarga con un aviso.
+
+    Iniciar sesión rota el token, así que un formulario abierto antes (otra
+    pestaña o el botón "Atrás") falla al enviarse. En vez de la página 403
+    de Django se vuelve a mostrar el mismo formulario con un token nuevo.
+    """
+    if request.method == 'POST' and not request.path.startswith('/api/'):
+        messages.warning(
+            request,
+            'El formulario había caducado (pasa si iniciaste o cerraste sesión '
+            'en otra pestaña). Vuelve a intentarlo.',
+        )
+        return HttpResponseRedirect(request.get_full_path())
+    return csrf_failure(request, reason)
 
 
 def _ruta_local(dato, request):

@@ -419,6 +419,24 @@ class SesionWebTests(TestCase):
         seguimiento = self.client.get(reverse('inicio'))
         self.assertFalse(seguimiento.wsgi_request.user.is_authenticated)
 
+    def test_token_csrf_vencido_recarga_el_login_con_aviso(self):
+        from django.test import Client
+
+        cliente = Client(enforce_csrf_checks=True)
+        cliente.get(reverse('auth:login'))
+        url = reverse('auth:login') + '?next=/mis-votos/'
+
+        respuesta = cliente.post(
+            url,
+            {'identificador': 'cardina', 'password': 'voto1234',
+             'csrfmiddlewaretoken': 'token-de-otra-pestana'},
+        )
+
+        self.assertRedirects(respuesta, url, fetch_redirect_response=False)
+        seguimiento = cliente.get(url)
+        self.assertContains(seguimiento, 'El formulario había caducado')
+        self.assertFalse(seguimiento.wsgi_request.user.is_authenticated)
+
 
 class CambioPasswordWebTests(TestCase):
     """Entregable A9: cambio de contraseña en /cuenta/password/."""
