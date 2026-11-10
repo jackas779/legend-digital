@@ -83,12 +83,32 @@ WSGI_APPLICATION = 'back.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+# Database — MySQL (Docker) definido por el .env de la raíz.
+# Regla: si DB_PASSWORD tiene contenido el backend usa MySQL; en otro caso
+# sigue en SQLite para que el desarrollo local no se rompa. docker-compose.yml
+# crea el contenedor (puerto 3306, utf8mb4, volumen persistente) con las
+# mismas variables, así que el .env es la única fuente de verdad.
+if os.getenv('DB_PASSWORD'):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.mysql',
+            'NAME': os.getenv('DB_NAME', 'votacion'),
+            'USER': os.getenv('DB_USER', 'votacion_user'),
+            'PASSWORD': os.getenv('DB_PASSWORD'),
+            'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+            'PORT': os.getenv('DB_PORT', '3306'),
+            'OPTIONS': {
+                'charset': 'utf8mb4',
+            },
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation

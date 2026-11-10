@@ -126,6 +126,38 @@ máquina nueva la base se construye desde cero al ejecutar `preparar`. Si
 quieres un superusuario propio para el admin, ejecuta después
 `python manage.py createsuperuser`.
 
+## MySQL con Docker (producción de datos)
+
+El desarrollo sigue en SQLite hasta que definas `DB_PASSWORD` en el `.env`
+de la raíz: con esa variable con contenido el backend alterna a MySQL
+automáticamente (ver `back/settings.py`).
+
+1. Copia la plantilla si no existe: `copy .env.example .env`
+2. Rellena `DB_PASSWORD` y `DB_ROOT_PASSWORD` en `.env` (y `DB_NAME`/
+   `DB_USER`/`DB_PORT` si tu MySQL no usa los valores por defecto)
+3. `preparar` **crea la base de datos automáticamente si no existe**
+   (`CREATE DATABASE IF NOT EXISTS` con `utf8mb4`); si ya existe la usa
+   tal cual, sin tocar su contenido. Con una BD previa con datos, revisa
+   antes que sea la correcta.
+4. Levanta el contenedor si lo necesitas (MySQL 8.4, puerto 3306, volumen
+   persistente `mysql_data`, juego de caracteres `utf8mb4`):
+
+```bash
+docker compose up -d
+```
+
+4. Si usas el contenedor: `docker compose up -d`
+5. Crea las tablas y carga datos demo en MySQL:
+
+```bash
+python manage.py preparar
+python manage.py runserver
+```
+
+El compose se niega a arrancar sin las claves (el `:?` del yml) y Django
+levanta con el mismo `.env`, así que no hay configuración duplicada. Verifica
+la conexión del contenedor con `docker compose ps` (estado `healthy`).
+
 ## Navegación por rol
 
 El menú del encabezado cambia según el rol de quien ingresa (igual que en

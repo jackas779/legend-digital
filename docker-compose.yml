@@ -1,0 +1,27 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: votacion-mysql
+    restart: unless-stopped
+    # Las credenciales se leen del .env de la raíz (mismo archivo que lee Django).
+    # Solo es obligatorio que definas DB_PASSWORD (y, si quieres, DB_ROOT_PASSWORD).
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-votacion}
+      MYSQL_USER: ${DB_USER:-votacion_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en el .env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?Define DB_ROOT_PASSWORD en el .env}
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    ports:
+      - '${DB_PORT:-3306}:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', '127.0.0.1', '-u', 'root', "--password=$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql_data:
