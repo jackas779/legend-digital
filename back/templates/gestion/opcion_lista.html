@@ -3,30 +3,34 @@
 {% block title %}Opciones — Sistema de Votación{% endblock %}
 
 {% block content %}
-  <h1>Opciones de «{{ votacion.nombre }}»</h1>
-  <p class="lead">
-    {{ votacion.edicion }} → {{ votacion.categoria }} · estado {{ votacion.estado }}.
-    <a href="{% url 'gestion:votaciones' %}">Volver a votaciones</a>.
-  </p>
 
-  {% if puede_crear %}
-    <p><a class="button" href="{% url 'gestion:opcion_crear' votacion.id %}">+ Nueva opción</a></p>
-  {% endif %}
+  <p class="crumbs"><a href="{% url 'gestion:votaciones' %}">← Votaciones</a></p>
+
+  <div class="pagina-head">
+    <div>
+      <h1>{{ votacion.nombre }}</h1>
+      <p class="lead">
+        {{ votacion.edicion }} · {{ votacion.categoria }}
+        <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
+      </p>
+    </div>
+    {% if puede_crear %}<a class="button" href="{% url 'gestion:opcion_crear' votacion.id %}">+ Nueva opción</a>{% endif %}
+  </div>
 
   {% for opcion in opciones %}
-    <div class="card">
-      <div>
-        <span class="num badge">{{ opcion.orden }}</span>
+    <article class="card fila-opcion">
+      <span class="num-opcion{% if opcion.es_voto_blanco %} blanco{% endif %}">{{ opcion.orden }}</span>
+      <div class="textos">
         <strong>{{ opcion.nombre }}</strong>
-        {% if opcion.subtitulo %}<span class="sub">— {{ opcion.subtitulo }}</span>{% endif %}
-        {% if opcion.es_voto_blanco %}<span class="badge">Voto blanco</span>{% endif %}
+        {% if opcion.es_voto_blanco %}<span class="badge">Voto en blanco</span>{% endif %}
+        {% if opcion.subtitulo %}<div class="meta">{{ opcion.subtitulo }}</div>{% endif %}
       </div>
-      <div class="meta">{{ opcion.num_votos }} voto(s)</div>
-      <div>
-        <a href="{% url 'gestion:opcion_editar' votacion.id opcion.id %}">Editar</a> ·
-        <a href="{% url 'gestion:opcion_eliminar' votacion.id opcion.id %}">Eliminar</a>
+      <span class="meta">{{ opcion.num_votos }} voto{{ opcion.num_votos|pluralize }}</span>
+      <div class="acciones">
+        <a class="button ghost mini" href="{% url 'gestion:opcion_editar' votacion.id opcion.id %}">Editar</a>
+        <a class="button ghost peligro mini" href="{% url 'gestion:opcion_eliminar' votacion.id opcion.id %}">Eliminar</a>
       </div>
-    </div>
+    </article>
   {% empty %}
     <p class="empty">No hay opciones todavía. Sin opciones no se puede votar.</p>
   {% endfor %}

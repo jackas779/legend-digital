@@ -3,24 +3,25 @@
 {% block title %}Gestión de votaciones — Sistema de Votación{% endblock %}
 
 {% block content %}
-  <h1>Votaciones</h1>
-  <p class="lead">
-    <a href="{% url 'gestion:ediciones' %}">Ediciones</a> ·
-    <a href="{% url 'gestion:categorias' %}">Categorías</a>.
-  </p>
 
-  {% if puede_crear %}<p><a class="button" href="{% url 'gestion:votacion_crear' %}">+ Nueva votación</a></p>{% endif %}
+  <div class="pagina-head">
+    <div>
+      <h1>Votaciones</h1>
+      <p class="lead">Cada votación pertenece a una edición y una categoría, y tiene sus propias opciones.</p>
+    </div>
+    {% if puede_crear %}<a class="button" href="{% url 'gestion:votacion_crear' %}">+ Nueva votación</a>{% endif %}
+  </div>
 
-  <form method="get" class="stack">
-    <select name="edicion">
+  <form method="get" class="stack" aria-label="Filtrar votaciones">
+    <select name="edicion" aria-label="Edición">
       <option value="">Todas las ediciones</option>
       {% for edicion in ediciones %}
         <option value="{{ edicion.id }}" {% if edicion.id|stringformat:"s" == filtro_edicion %}selected{% endif %}>
-          {{ edicion }} ({{ edicion.estado }})
+          {{ edicion }} ({{ edicion.get_estado_display }})
         </option>
       {% endfor %}
     </select>
-    <select name="categoria">
+    <select name="categoria" aria-label="Categoría">
       <option value="">Todas las categorías</option>
       {% for categoria in categorias %}
         <option value="{{ categoria.id }}" {% if categoria.id|stringformat:"s" == filtro_categoria %}selected{% endif %}>
@@ -32,33 +33,37 @@
     {% if filtro_edicion or filtro_categoria %}<a href="{% url 'gestion:votaciones' %}">Quitar filtro</a>{% endif %}
   </form>
 
-  {% for votacion in votaciones %}
-    <div class="card">
-      <strong>{{ votacion.nombre }}</strong>
-      <span class="badge {% if votacion.estado == 'ACTIVA' %}activa{% elif votacion.estado == 'FINALIZADA' %}finalizada{% endif %}">
-        {{ votacion.estado }}
-      </span>
-      <div class="meta">
-        {{ votacion.edicion }} → {{ votacion.categoria }} ·
-        {{ votacion.num_votos }} voto(s) ·
-        abre {{ votacion.fecha_apertura|date:"d/m/Y H:i" }}, cierra {{ votacion.fecha_cierre|date:"d/m/Y H:i" }}
-      </div>
-      <div>
-        <a href="{% url 'gestion:votacion_editar' votacion.id %}">Editar</a> ·
-        <a href="{% url 'gestion:opcion_lista' votacion.id %}">Opciones</a>
-        {% if votacion.estado == 'BORRADOR' or votacion.estado == 'PROGRAMADA' %}
-          <form class="inline" method="post" action="{% url 'gestion:votacion_abrir' votacion.id %}">
-            {% csrf_token %}<button type="submit" class="ghost">Abrir</button>
-          </form>
-        {% endif %}
-        {% if votacion.estado != 'FINALIZADA' %}
-          <form class="inline" method="post" action="{% url 'gestion:votacion_cerrar' votacion.id %}">
-            {% csrf_token %}<button type="submit" class="ghost">Cerrar</button>
-          </form>
-        {% endif %}
-      </div>
-    </div>
-  {% empty %}
+  <div class="grid">
+    {% for votacion in votaciones %}
+      <article class="card tarjeta">
+        <div class="tarjeta-titulo">
+          <strong>{{ votacion.nombre }}</strong>
+          <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
+        </div>
+        <div class="meta">{{ votacion.edicion }} · {{ votacion.categoria }}</div>
+        <div class="meta">{{ votacion.fecha_apertura|date:"j b Y, H:i" }} → {{ votacion.fecha_cierre|date:"j b Y, H:i" }}</div>
+        <div class="cifras">
+          <div><b class="cifra">{{ votacion.num_votos }}</b><span>voto{{ votacion.num_votos|pluralize }}</span></div>
+        </div>
+        <div class="acciones">
+          <a class="button mini" href="{% url 'gestion:opcion_lista' votacion.id %}">Opciones</a>
+          <a class="button ghost mini" href="{% url 'gestion:votacion_editar' votacion.id %}">Editar</a>
+          {% if votacion.estado == 'BORRADOR' or votacion.estado == 'PROGRAMADA' %}
+            <form method="post" action="{% url 'gestion:votacion_abrir' votacion.id %}">
+              {% csrf_token %}<button type="submit" class="ghost mini">Abrir</button>
+            </form>
+          {% endif %}
+          {% if votacion.estado != 'FINALIZADA' %}
+            <form method="post" action="{% url 'gestion:votacion_cerrar' votacion.id %}">
+              {% csrf_token %}<button type="submit" class="ghost mini">Cerrar</button>
+            </form>
+          {% endif %}
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+
+  {% if not votaciones %}
     <p class="empty">No hay votaciones con ese filtro.</p>
-  {% endfor %}
+  {% endif %}
 {% endblock %}

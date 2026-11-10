@@ -33,6 +33,7 @@
   </header>
 
   {% regroup votaciones by categoria as grupos %}
+  <div class="categorias-grid">
   {% for grupo in grupos %}
     <section class="grupo-categoria">
       <div class="grupo-head">
@@ -45,7 +46,7 @@
         <p class="desc">{{ grupo.grouper.descripcion }}</p>
       {% endif %}
 
-      <div class="grid">
+      <div class="lista-votaciones">
         {% for votacion in grupo.list %}
           <article class="card tarjeta">
             <div class="tarjeta-titulo">
@@ -97,4 +98,5 @@
   {% empty %}
     <p class="empty">Esta edición todavía no tiene votaciones.</p>
   {% endfor %}
+  </div>
 {% endblock %}

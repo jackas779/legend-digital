@@ -3,26 +3,24 @@
 {% block title %}Eliminar edición — Sistema de Votación{% endblock %}
 
 {% block content %}
-  <div class="login-box" style="max-width:520px">
+  <div class="panel-form">
     <h1>Eliminar edición</h1>
     <p class="lead">¿Confirmas eliminar {{ objeto }}?</p>
 
     {% if con_votos %}
-      <ul class="messages">
-        <li class="msg error">
-          Esta edición tiene votaciones con votos registrados; el borrado está
-          bloqueado para proteger el conteo:
-          {% for v in con_votos %}{{ v.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}.
-        </li>
-      </ul>
+      <p class="msg error">
+        Esta edición tiene votaciones con votos registrados; el borrado está
+        bloqueado para proteger el conteo:
+        {% for v in con_votos %}{{ v.nombre }}{% if not forloop.last %}, {% endif %}{% endfor %}.
+      </p>
       <a href="{% url 'gestion:ediciones' %}" class="button">Volver</a>
     {% else %}
-      <form method="post">
+      <p class="msg warning">También se borrarán sus votaciones y opciones ({{ objeto.votaciones.count }} votaci{{ objeto.votaciones.count|pluralize:"ón,ones" }}). Esta acción no se puede deshacer.</p>
+      <form method="post" class="acciones-form">
         {% csrf_token %}
-        <button type="submit">Sí, eliminar definitivamente</button>
+        <button type="submit" class="peligro">Sí, eliminar definitivamente</button>
         <a href="{% url 'gestion:ediciones' %}" class="button ghost">Cancelar</a>
       </form>
-      <p class="meta">Se borrarán también sus votaciones y opciones ({{ objeto.votaciones.count }}).</p>
     {% endif %}
   </div>
 {% endblock %}

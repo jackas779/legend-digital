@@ -3,23 +3,35 @@
 {% block title %}{{ titulo }} — Sistema de Votación{% endblock %}
 
 {% block content %}
-  <div class="login-box" style="max-width:480px">
-    <h1>Categorías</h1>
-    <p class="lead"><a href="{% url 'gestion:ediciones' %}">Ver ediciones</a>.</p>
 
-    {% if puede_crear %}<p><a class="button" href="{% url 'gestion:categoria_crear' %}">+ Nueva categoría</a></p>{% endif %}
+  <div class="pagina-head">
+    <div>
+      <h1>Categorías</h1>
+      <p class="lead">Se reutilizan entre ediciones. Cada votante tiene un voto por categoría en cada edición.</p>
+    </div>
+    {% if puede_crear %}<a class="button" href="{% url 'gestion:categoria_crear' %}">+ Nueva categoría</a>{% endif %}
+  </div>
 
+  <div class="grid">
     {% for categoria in categorias %}
-      <div class="card">
+      <article class="card tarjeta">
         <strong>{{ categoria.nombre }}</strong>
-        <div class="meta">{{ categoria.num_votaciones }} votacion(es) usan esta categoría</div>
-        <div>
-          <a href="{% url 'gestion:categoria_editar' categoria.id %}">Editar</a> ·
-          <a href="{% url 'gestion:categoria_eliminar' categoria.id %}">Eliminar</a>
+        {% if categoria.descripcion %}
+          <div class="meta">{{ categoria.descripcion }}</div>
+        {% endif %}
+        <div class="cifras">
+          <div><b class="cifra">{{ categoria.num_votaciones }}</b><span>votaci{{ categoria.num_votaciones|pluralize:"ón,ones" }} la usa{{ categoria.num_votaciones|pluralize:",n" }}</span></div>
         </div>
-      </div>
-    {% empty %}
-      <p class="empty">No hay categorías todavía.</p>
+        <div class="acciones">
+          <a class="button ghost mini" href="{% url 'gestion:votaciones' %}?categoria={{ categoria.id }}">Ver votaciones</a>
+          <a class="button ghost mini" href="{% url 'gestion:categoria_editar' categoria.id %}">Editar</a>
+          <a class="button ghost peligro mini" href="{% url 'gestion:categoria_eliminar' categoria.id %}">Eliminar</a>
+        </div>
+      </article>
     {% endfor %}
   </div>
+
+  {% if not categorias %}
+    <p class="empty">No hay categorías todavía.</p>
+  {% endif %}
 {% endblock %}

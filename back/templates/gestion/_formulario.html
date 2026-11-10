@@ -1,0 +1,28 @@
+{% comment %}Formulario de gestión. Recibe ``form`` y ``cancelar`` (URL).{% endcomment %}
+<form method="post" novalidate>
+  {% csrf_token %}
+  {% for error in form.non_field_errors %}
+    <div class="alert-error" role="alert"><p>{{ error }}</p></div>
+  {% endfor %}
+  {% for field in form.visible_fields %}
+    {% if field.widget_type == 'checkbox' %}
+      <div class="campo campo-check">
+        {{ field }}
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {% if field.help_text %}<p class="ayuda">{{ field.help_text }}</p>{% endif %}
+        {% for error in field.errors %}<p class="errors">{{ error }}</p>{% endfor %}
+      </div>
+    {% else %}
+      <div class="campo">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<p class="ayuda">{{ field.help_text }}</p>{% endif %}
+        {% for error in field.errors %}<p class="errors">{{ error }}</p>{% endfor %}
+      </div>
+    {% endif %}
+  {% endfor %}
+  <div class="acciones-form">
+    <button type="submit">Guardar</button>
+    <a href="{{ cancelar }}" class="button ghost">Cancelar</a>
+  </div>
+</form>
