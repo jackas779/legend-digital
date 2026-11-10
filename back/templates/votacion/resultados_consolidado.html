@@ -3,30 +3,33 @@
 {% block title %}Consolidado {{ edicion }} — Sistema de Votación{% endblock %}
 
 {% block content %}
-  <h1>Consolidado: {{ edicion }}</h1>
-  <p class="lead"><a href="{% url 'resultados_indice' %}">← Otras ediciones</a></p>
+  <p class="crumbs"><a href="{% url 'resultados_indice' %}">← Otras ediciones</a></p>
 
-  <p><strong>Total de votos de la edición:</strong> {{ total_edicion }}</p>
+  <h1>{{ edicion }}</h1>
+  <p class="lead">Consolidado de la edición</p>
 
-  {% for votacion in votaciones %}
-    <h2>{{ votacion.titulo }}</h2>
-    <table>
-      <thead>
-        <tr><th>Votación</th><th>Categoría</th><th>Estado</th><th>Votos</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>{{ votacion.nombre }}</td>
-          <td>{{ votacion.categoria }}</td>
-          <td><span class="badge">{{ votacion.estado }}</span></td>
-          <td>{{ votacion.total }}</td>
-        </tr>
-      </tbody>
-    </table>
-    <p>
-      <a href="{% url 'resultados' votacion.id %}">Detalle por opción</a>
-    </p>
-  {% empty %}
+  <p class="total-votos"><strong>{{ total_edicion }}</strong> voto{{ total_edicion|pluralize }} en total</p>
+
+  {% if votaciones %}
+    <div class="tabla-scroll">
+      <table>
+        <thead>
+          <tr><th>Votación</th><th>Categoría</th><th>Estado</th><th>Votos</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for votacion in votaciones %}
+            <tr>
+              <td><strong>{{ votacion.nombre }}</strong></td>
+              <td>{{ votacion.categoria }}</td>
+              <td><span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span></td>
+              <td>{{ votacion.total }}</td>
+              <td><a href="{% url 'resultados' votacion.id %}">Detalle</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
     <p class="empty">Esta edición no tiene votaciones.</p>
-  {% endfor %}
+  {% endif %}
 {% endblock %}

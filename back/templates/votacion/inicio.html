@@ -6,84 +6,86 @@
   {% if destacada %}
     <section class="hero" aria-label="Proceso electoral destacado">
       <div class="hero-texto">
-        <span class="kicker">Proceso electoral{% if destacada.num_abiertas %} · votaciones abiertas{% endif %}</span>
+        <span class="kicker">{% if destacada.num_abiertas %}Votación abierta{% else %}Proceso electoral{% endif %}</span>
         <h1>{{ destacada }}</h1>
         <p class="meta-hero">
           {% if destacada.fecha_inicio and destacada.fecha_fin %}
-            {{ destacada.fecha_inicio|date:"d b Y" }} — {{ destacada.fecha_fin|date:"d b Y" }}
-            ·
+            {{ destacada.fecha_inicio|date:"j b" }} al {{ destacada.fecha_fin|date:"j b Y" }} ·
           {% endif %}
-          {{ destacada.num_categorias }} categor{{ destacada.num_categorias|pluralize:"ía,ías" }}
-          · {{ destacada.num_votaciones }} votaci{{ destacada.num_votaciones|pluralize:"ón,ones" }}
-          {% if destacada.num_abiertas %}· <strong>{{ destacada.num_abiertas }}</strong> abierta{{ destacada.num_abiertas|pluralize }}{% endif %}
+          {{ destacada.num_categorias }} categoría{{ destacada.num_categorias|pluralize }}
         </p>
 
-        {% if user.is_authenticated %}
-          {% if destacada.num_categorias > 0 %}
-            <div class="progreso {% if destacada.categorias_votadas >= destacada.num_categorias %}completo{% endif %}">
-              <div class="texto">
-                <span>Tu progreso de voto</span>
-                <span>{{ destacada.categorias_votadas }} de {{ destacada.num_categorias }} categorí{{ destacada.num_categorias|pluralize:"a,as" }}</span>
-              </div>
-              <div class="pista" role="img" aria-label="Progreso del voto">
-                <span class="barra" style="width:{% widthratio destacada.categorias_votadas destacada.num_categorias 100 %}%"></span>
-              </div>
+        {% if rol_actual == 'Votante' and destacada.num_categorias > 0 %}
+          <div class="progreso">
+            <div class="texto">
+              <span>Tu progreso</span>
+              <span>{{ destacada.categorias_votadas }} de {{ destacada.num_categorias }} categoría{{ destacada.num_categorias|pluralize }}</span>
             </div>
-          {% endif %}
+            <div class="pista" role="img" aria-label="Votaste en {{ destacada.categorias_votadas }} de {{ destacada.num_categorias }} categorías">
+              <span style="width:{% widthratio destacada.categorias_votadas destacada.num_categorias 100 %}%"></span>
+            </div>
+          </div>
         {% endif %}
 
         <div class="hero-acciones">
-          <a class="button" href="{% url 'edicion-detalle' destacada.pk %}">
-            {% if not user.is_authenticated %}
-              🗳️ Ver cómo votar
-            {% elif destacada.categorias_votadas >= destacada.num_categorias and destacada.num_categorias > 0 %}
+          <a class="button sol" href="{% url 'edicion-detalle' destacada.pk %}">
+            {% if rol_actual != 'Votante' %}
               Ver la edición
+            {% elif destacada.categorias_votadas >= destacada.num_categorias and destacada.num_categorias > 0 %}
+              Ver mis votaciones
             {% elif destacada.categorias_votadas > 0 %}
               Continuar votando
             {% else %}
-              🗳️ Votar ahora
+              Votar ahora
             {% endif %}
           </a>
-          {% if destacada.nombres_categorias %}
-            <span class="badge">{{ destacada.nombres_categorias|join:" · " }}</span>
+          {% if not user.is_authenticated %}
+            <a class="button ghost" style="color:#fff;border-color:rgba(255,255,255,.4)" href="{% url 'auth:login' %}">Ingresar</a>
           {% endif %}
         </div>
       </div>
-      <div class="hero-art" aria-hidden="true">🪘</div>
+      {% if destacada.num_abiertas %}
+        <div class="hero-dato">
+          <strong>{{ destacada.num_abiertas }}</strong>
+          <span>votaci{{ destacada.num_abiertas|pluralize:"ón,ones" }} abierta{{ destacada.num_abiertas|pluralize }}</span>
+        </div>
+      {% endif %}
     </section>
   {% elif hay_ediciones %}
     <h1>Procesos electorales</h1>
-    <p class="lead">Elije una edición para ver sus categorías y votaciones.</p>
+    <p class="lead">Elige una edición para ver sus categorías y votaciones.</p>
   {% else %}
     <h1>Procesos electorales</h1>
     <p class="empty">Todavía no hay ediciones creadas.</p>
-    <p>Créalas desde el <a href="{% url 'admin:index' %}">panel de administración</a>.</p>
+    {% if rol_actual == 'Administrador' or rol_actual == 'Organizador' %}
+      <p class="center"><a class="button" href="{% url 'gestion:ediciones' %}">Crear una edición</a></p>
+    {% endif %}
   {% endif %}
 
   {% if ediciones %}
-    {% if destacada %}<h2>Otras ediciones</h2>{% else %}<h2>Ediciones</h2>{% endif %}
+    {% if destacada %}<h2>Otras ediciones</h2>{% endif %}
     <div class="grid">
       {% for edicion in ediciones %}
         <a class="card tarjeta" href="{% url 'edicion-detalle' edicion.pk %}">
-          <span class="aside" aria-hidden="true">→</span>
-          <strong>{{ edicion }}</strong>
-          <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
-          {% if edicion.num_abiertas %}
-            <span class="badge activa">{{ edicion.num_abiertas }} abierta{{ edicion.num_abiertas|pluralize }}</span>
-          {% endif %}
-          {% if user.is_authenticated and edicion.categorias_votadas > 0 %}
-            <span class="badge votada">Votaste en {{ edicion.categorias_votadas }} categorí{{ edicion.categorias_votadas|pluralize:"a,as" }}</span>
-          {% endif %}
-          <div class="meta">
-            {% if edicion.fecha_inicio and edicion.fecha_fin %}
-              {{ edicion.fecha_inicio|date:"M Y" }} — {{ edicion.fecha_fin|date:"M Y" }}
-              ·
+          <div class="tarjeta-titulo">
+            <strong>{{ edicion }}</strong>
+            {% if edicion.num_abiertas %}
+              <span class="badge activa">{{ edicion.num_abiertas }} abierta{{ edicion.num_abiertas|pluralize }}</span>
+            {% else %}
+              <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
             {% endif %}
-            {{ edicion.num_categorias }} categor{{ edicion.num_categorias|pluralize:"ía,ías" }},
-            {{ edicion.num_votaciones }} votaci{{ edicion.num_votaciones|pluralize:"ón,ones" }}
           </div>
           {% if edicion.nombres_categorias %}
             <div class="meta">{{ edicion.nombres_categorias|join:" · " }}</div>
+          {% endif %}
+          <div class="meta">
+            {% if edicion.fecha_inicio and edicion.fecha_fin %}
+              {{ edicion.fecha_inicio|date:"b Y" }} a {{ edicion.fecha_fin|date:"b Y" }} ·
+            {% endif %}
+            {{ edicion.num_votaciones }} votaci{{ edicion.num_votaciones|pluralize:"ón,ones" }}
+          </div>
+          {% if rol_actual == 'Votante' and edicion.categorias_votadas > 0 %}
+            <div><span class="badge votada">Votaste en {{ edicion.categorias_votadas }} categoría{{ edicion.categorias_votadas|pluralize }}</span></div>
           {% endif %}
         </a>
       {% endfor %}

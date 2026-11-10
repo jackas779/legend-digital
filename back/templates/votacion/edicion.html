@@ -5,34 +5,31 @@
 {% block content %}
   <p class="crumbs"><a href="{% url 'inicio' %}">← Ediciones</a></p>
 
-  <header class="hero" aria-label="Encabezado de la edición">
+  <header class="hero">
     <div class="hero-texto">
-      <span class="kicker">
-        <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
-        {% if edicion.num_abiertas %}
-          · {{ edicion.num_abiertas }} votaci{{ edicion.num_abiertas|pluralize:"ón,ones" }} abierta{{ edicion.num_abiertas|pluralize }}
-        {% endif %}
-      </span>
+      <span class="kicker">{{ edicion.get_estado_display }}{% if edicion.fecha_fin %} · hasta el {{ edicion.fecha_fin|date:"j b Y" }}{% endif %}</span>
       <h1>{{ edicion }}</h1>
-      <p class="meta-hero">
-        {% if edicion.fecha_fin %}Cierra el {{ edicion.fecha_fin|date:"d b Y" }}{% else %}Sin fechas definidas{% endif %}
-      </p>
-      <p class="lead">Emites <strong>un solo voto por categoría</strong>: si una categoría
+      <p class="lead">Tienes <strong>un solo voto por categoría</strong>. Si una categoría
         tiene varias votaciones, votar en una bloquea las demás.</p>
 
-      {% if user.is_authenticated and ids_categorias_votadas|length > 0 %}
-          <div class="progreso {% if ids_categorias_votadas|length >= edicion.num_categorias %}completo{% endif %}">
-            <div class="texto">
-              <span>Tu progreso en esta edición</span>
-              <span>{{ ids_categorias_votadas|length }} de {{ edicion.num_categorias }} categorí{{ edicion.num_categorias|pluralize:"a,as" }}</span>
-            </div>
-            <div class="pista" role="img" aria-label="Progreso del voto en la edición">
-              <span class="barra" style="width:{% if edicion.num_categorias %}{% widthratio ids_categorias_votadas|length edicion.num_categorias 100 %}{% else %}0{% endif %}%"></span>
-            </div>
+      {% if rol_actual == 'Votante' and edicion.num_categorias %}
+        <div class="progreso">
+          <div class="texto">
+            <span>Tu progreso</span>
+            <span>{{ ids_categorias_votadas|length }} de {{ edicion.num_categorias }} categoría{{ edicion.num_categorias|pluralize }}</span>
           </div>
+          <div class="pista" role="img" aria-label="Votaste en {{ ids_categorias_votadas|length }} de {{ edicion.num_categorias }} categorías">
+            <span style="width:{% widthratio ids_categorias_votadas|length edicion.num_categorias 100 %}%"></span>
+          </div>
+        </div>
       {% endif %}
     </div>
-    <div class="hero-art" aria-hidden="true">🪘</div>
+    {% if edicion.num_abiertas %}
+      <div class="hero-dato">
+        <strong>{{ edicion.num_abiertas }}</strong>
+        <span>votaci{{ edicion.num_abiertas|pluralize:"ón,ones" }} abierta{{ edicion.num_abiertas|pluralize }}</span>
+      </div>
+    {% endif %}
   </header>
 
   {% regroup votaciones by categoria as grupos %}
@@ -40,9 +37,8 @@
     <section class="grupo-categoria">
       <div class="grupo-head">
         <h2>{{ grupo.grouper }}</h2>
-        <span class="badge">{{ grupo.list|length }} votaci{{ grupo.list|length|pluralize:"ón,ones" }}</span>
         {% if grupo.grouper.id in ids_categorias_votadas %}
-          <span class="badge votada">✓ Ya votaste aquí</span>
+          <span class="badge votada">Ya votaste aquí</span>
         {% endif %}
       </div>
       {% if grupo.grouper.descripcion %}
@@ -51,51 +47,54 @@
 
       <div class="grid">
         {% for votacion in grupo.list %}
-          <div class="card tarjeta">
-            <strong>{{ votacion.nombre }}</strong>
-            <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
-            {% if votacion.id in ids_votaciones_votadas %}
-              <span class="badge votada">✓ Tu voto está registrado</span>
-            {% elif votacion.esta_abierta %}
-              <span class="badge activa">Abierta ahora</span>
-            {% endif %}
+          <article class="card tarjeta">
+            <div class="tarjeta-titulo">
+              <strong>{{ votacion.nombre }}</strong>
+              {% if votacion.id in ids_votaciones_votadas %}
+                <span class="badge votada">Tu voto</span>
+              {% elif votacion.categoria_id in ids_categorias_votadas %}
+              {% elif votacion.esta_abierta %}
+                <span class="badge activa">Abierta</span>
+              {% else %}
+                <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
+              {% endif %}
+            </div>
             {% if votacion.descripcion %}
               <div class="meta">{{ votacion.descripcion }}</div>
             {% endif %}
             <div class="meta">
               {{ votacion.opciones.count }} opci{{ votacion.opciones.count|pluralize:"ón,ones" }}
-              {% if votacion.fecha_apertura %}
-                · cierra {{ votacion.fecha_cierre|date:"d b Y, H:i" }}
-              {% endif %}
-              {% if votacion.total_votos %}
-                · {{ votacion.total_votos }} voto{{ votacion.total_votos|pluralize }}
-              {% endif %}
+              {% if votacion.esta_abierta %}· cierra el {{ votacion.fecha_cierre|date:"j b, H:i" }}{% endif %}
             </div>
 
             <div class="cta">
               {% if votacion.id in ids_votaciones_votadas %}
                 {% if votacion.mi_comprobante %}
-                  <a href="{% url 'comprobante' votacion.mi_comprobante %}">📄 Ver mi comprobante</a>
+                  <a class="enlace" href="{% url 'comprobante' votacion.mi_comprobante %}">Ver mi comprobante</a>
                 {% else %}
-                  <a href="{% url 'tarjeton' votacion.pk %}">Ver detalles</a>
+                  <a class="enlace" href="{% url 'tarjeton' votacion.pk %}">Ver detalles</a>
                 {% endif %}
+              {% elif votacion.categoria_id in ids_categorias_votadas %}
+                <span class="nota">Ya usaste tu voto de esta categoría</span>
               {% elif votacion.esta_abierta %}
-                <a href="{% url 'tarjeton' votacion.pk %}">🗳️ Entrar a votar</a>
+                {% if user.is_authenticated and rol_actual != 'Votante' %}
+                  <a class="enlace" href="{% url 'tarjeton' votacion.pk %}">Ver opciones</a>
+                {% else %}
+                  <a class="button ancho" href="{% url 'tarjeton' votacion.pk %}">Votar</a>
+                {% endif %}
               {% elif votacion.estado == 'ACTIVA' %}
-                <span>Sin abrir aún · verás la casilla cuando abra</span>
+                <span class="nota">Fuera del periodo de votación</span>
               {% elif votacion.estado == 'PROGRAMADA' or votacion.estado == 'BORRADOR' %}
-                <span>Aún no está disponible</span>
+                <span class="nota">Aún no está disponible</span>
               {% else %}
-                <a href="{% url 'resultados' votacion.pk %}">📊 Ver resultados</a>
+                <a class="enlace" href="{% url 'resultados' votacion.pk %}">Ver resultados</a>
               {% endif %}
             </div>
-          </div>
+          </article>
         {% endfor %}
       </div>
     </section>
   {% empty %}
     <p class="empty">Esta edición todavía no tiene votaciones.</p>
   {% endfor %}
-
-  <p><a href="{% url 'inicio' %}">← Volver a las ediciones</a></p>
 {% endblock %}

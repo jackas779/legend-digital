@@ -6,12 +6,19 @@
   <h1>Resultados</h1>
   <p class="lead">Elige una edición para ver su consolidado.</p>
 
-  {% for edicion in ediciones %}
-    <a class="card" href="{% url 'resultados_consolidado' edicion.id %}">
-      <strong>{{ edicion }}</strong> <span class="badge">{{ edicion.estado }}</span>
-      <div class="meta">{{ edicion.votaciones.count }} votacion(es)</div>
-    </a>
-  {% empty %}
+  <div class="grid">
+    {% for edicion in ediciones %}
+      <a class="card tarjeta" href="{% url 'resultados_consolidado' edicion.id %}">
+        <div class="tarjeta-titulo">
+          <strong>{{ edicion }}</strong>
+          <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
+        </div>
+        <div class="meta">{{ edicion.votaciones.count }} votaci{{ edicion.votaciones.count|pluralize:"ón,ones" }}</div>
+      </a>
+    {% endfor %}
+  </div>
+
+  {% if not ediciones %}
     <p class="empty">No hay ediciones todavía.</p>
-  {% endfor %}
+  {% endif %}
 {% endblock %}

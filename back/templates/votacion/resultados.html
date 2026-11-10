@@ -3,25 +3,29 @@
 {% block title %}Resultados — {{ votacion.nombre }}{% endblock %}
 
 {% block content %}
-  <h1>Resultados</h1>
-  <p class="lead">{{ votacion.nombre }} · {{ votacion.edicion }} · {{ votacion.categoria }}</p>
+  <div class="tarjeton">
+    <p class="crumbs"><a href="{% url 'edicion-detalle' votacion.edicion.pk %}">← {{ votacion.edicion }}</a></p>
 
-  <p><strong>{{ total }}</strong> voto{{ total|pluralize }} registrado{{ total|pluralize }}</p>
+    <h1>{{ votacion.nombre }}</h1>
+    <p class="lead">Resultados · {{ votacion.categoria }}</p>
 
-  {% for opcion in opciones %}
-    <div class="bar-row">
-      <div class="bar-head">
-        <span>{{ opcion.orden }}. {{ opcion.nombre }}</span>
-        <span>{{ opcion.total }} ({{ opcion.porcentaje }}%)</span>
+    <p class="total-votos"><strong>{{ total }}</strong> voto{{ total|pluralize }} registrado{{ total|pluralize }}</p>
+
+    {% for opcion in opciones %}
+      <div class="bar-row">
+        <div class="bar-head">
+          <span>{{ opcion.nombre }}</span>
+          <span class="votos">{{ opcion.total }} · {{ opcion.porcentaje }}%</span>
+        </div>
+        <div class="bar"><span style="width: {{ opcion.porcentaje|stringformat:'s' }}%"></span></div>
       </div>
-      <div class="bar"><span style="width: {{ opcion.porcentaje }}%"></span></div>
-    </div>
-  {% empty %}
-    <p class="empty">Todavía no hay opciones ni votos.</p>
-  {% endfor %}
+    {% empty %}
+      <p class="empty">Todavía no hay opciones ni votos.</p>
+    {% endfor %}
 
-  <p>
-    <a href="{% url 'tarjeton' votacion.pk %}">← Volver al tarjetón</a>
-    · <a href="{% url 'edicion-detalle' votacion.edicion.pk %}">Edición</a>
-  </p>
+    <p class="enlaces-pie">
+      {% if votacion.esta_abierta %}<a href="{% url 'tarjeton' votacion.pk %}">Ir al tarjetón</a>{% endif %}
+      {% if user.is_authenticated and rol_actual == 'Votante' %}<a href="{% url 'mis_votos' %}">Mis votos</a>{% endif %}
+    </p>
+  </div>
 {% endblock %}

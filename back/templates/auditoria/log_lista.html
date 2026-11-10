@@ -12,7 +12,7 @@
   </p>
 
   {% if eventos %}
-    <table>
+    <div class="tabla-scroll"><table>
       <thead>
         <tr>
           <th>Fecha y hora</th>
@@ -35,7 +35,7 @@
           </tr>
         {% endfor %}
       </tbody>
-    </table>
+    </table></div>
   {% else %}
     <p class="empty">Todavía no hay eventos registrados.</p>
   {% endif %}

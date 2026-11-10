@@ -5,35 +5,23 @@
 {% block content %}
   <div class="login-shell">
     <aside class="login-hero">
-      <div class="logo" aria-hidden="true">🪘</div>
-      <span class="kicker">Proceso electoral</span>
-      <h1>{% if edicion_destacada %}{{ edicion_destacada }}{% else %}Sistema de Votación{% endif %}</h1>
-      <p class="lead">
-        {% if edicion_destacada %}
-          Tu voto decide a los favoritos de esta edición: entra, elige tu
-          opción por categoría y confirma con tu comprobante.
-        {% else %}
-          Entra con tu cuenta para ver las ediciones disponibles y votar.
-        {% endif %}
-      </p>
-      <ul>
-        <li>✅ Ingresa con tu correo, usuario o documento</li>
-        <li>🗳️ Un solo voto por categoría dentro de la edición</li>
-        <li>📄 Confirma tu emisión con un comprobante verificable</li>
-      </ul>
+      <span class="kicker">{% if edicion_destacada %}Votación abierta{% else %}Proceso electoral{% endif %}</span>
+      <h1>{% if edicion_destacada %}{{ edicion_destacada }}{% else %}Tu voto cuenta{% endif %}</h1>
+      <p class="lead">Participar toma menos de un minuto.</p>
+      <ol>
+        <li>Ingresa con tu cuenta</li>
+        <li>Elige tu opción en cada categoría</li>
+        <li>Guarda tu comprobante</li>
+      </ol>
     </aside>
 
     <div class="login-card">
       <h2>Ingresar</h2>
-      <p class="lead">Escribe tus datos para entrar y votar.</p>
+      <p class="lead">Usa tu correo, usuario o documento.</p>
 
-      {% if form.non_field_errors %}
-        <div class="alert-error">
-          {% for error in form.non_field_errors %}
-            <p>{{ error }}</p>
-          {% endfor %}
-        </div>
-      {% endif %}
+      {% for error in form.non_field_errors %}
+        <div class="alert-error" role="alert"><p>{{ error }}</p></div>
+      {% endfor %}
 
       <form method="post" novalidate>
         {% csrf_token %}
@@ -51,9 +39,7 @@
           <label for="{{ form.password.id_for_label }}">{{ form.password.label }}</label>
           <div class="clave-wrap">
             {{ form.password }}
-            <button type="button" class="toggle-clave" data-toggle-clave aria-pressed="false">
-              Ver
-            </button>
+            <button type="button" class="toggle-clave" data-toggle-clave aria-pressed="false">Ver</button>
           </div>
           {% for error in form.password.errors %}
             <p class="errors">{{ error }}</p>
@@ -65,11 +51,11 @@
           <label for="{{ form.recordarme.id_for_label }}">Mantener la sesión abierta</label>
         </div>
 
-        <button type="submit">Entrar a votar</button>
+        <button type="submit" class="ancho">Entrar</button>
       </form>
 
       <div class="pie">
-        Aún no tienes cuenta: <a href="{% url 'registro' %}">regístrate aquí</a>.
+        ¿Aún no tienes cuenta? <a href="{% url 'registro' %}">Regístrate</a>
       </div>
     </div>
   </div>
@@ -79,7 +65,7 @@
     (function () {
       const boton = document.querySelector('[data-toggle-clave]');
       if (!boton) return;
-      const campo = boton.parentElement.querySelector('input[type="password"]');
+      const campo = boton.parentElement.querySelector('input');
       boton.addEventListener('click', function () {
         const ver = campo.getAttribute('type') === 'password';
         campo.setAttribute('type', ver ? 'text' : 'password');

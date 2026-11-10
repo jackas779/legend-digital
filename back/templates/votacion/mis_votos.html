@@ -6,13 +6,18 @@
   <h1>Mis votos</h1>
   <p class="lead">Votaciones en las que ya participaste, con tu comprobante.</p>
 
-  {% for padron in padrones %}
-    <div class="card">
-      <strong>{{ padron.votacion.titulo }}</strong>
-      <div class="meta">Emitido el {{ padron.fecha_emision|date:"d/m/Y H:i" }}</div>
-      <a href="{% url 'comprobante' padron.hash_comprobante %}">Ver comprobante</a>
-    </div>
-  {% empty %}
+  <div class="grid">
+    {% for padron in padrones %}
+      <a class="card tarjeta" href="{% url 'comprobante' padron.hash_comprobante %}">
+        <strong>{{ padron.votacion.titulo }}</strong>
+        <div class="meta">Emitido el {{ padron.fecha_emision|date:"d/m/Y H:i" }}</div>
+        <div class="cta"><span class="enlace" style="color:var(--accent)">Ver comprobante →</span></div>
+      </a>
+    {% endfor %}
+  </div>
+
+  {% if not padrones %}
     <p class="empty">Aún no has votado en ninguna votación.</p>
-  {% endfor %}
+    <p class="center"><a class="button" href="{% url 'inicio' %}">Ir a votar</a></p>
+  {% endif %}
 {% endblock %}
