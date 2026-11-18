@@ -37,7 +37,7 @@
       <span class="meta">{{ opcion.num_votos }} voto{{ opcion.num_votos|pluralize }}</span>
       <div class="acciones">
         {% if puede_editar %}<a class="button ghost mini" href="{% url 'gestion:opcion_editar' votacion.id opcion.id %}">Editar</a>{% endif %}
-        {% if puede_eliminar %}<a class="button ghost peligro mini" href="{% url 'gestion:opcion_eliminar' votacion.id opcion.id %}">Eliminar</a>{% endif %}
+        {% if puede_eliminar and not opcion.num_votos %}<a class="button ghost peligro mini" href="{% url 'gestion:opcion_eliminar' votacion.id opcion.id %}">Eliminar</a>{% endif %}
       </div>
     </article>
   {% empty %}
