@@ -35,8 +35,12 @@ def catalogo():
 #    (confirmar o reabrir). Es del auditor.
 #  - discrepancias.resolver: resolver o descartar. Es del organizador; si su
 #    rol no lo tiene, la discrepancia pasa al administrador.
+#  - resultados.ver: resultados en vivo (antes del cierre). El votante no lo
+#    tiene: verlos podría influir en quien todavía no vota.
+#  - inscripciones.gestionar: inscribir votantes a una edición por lista.
 CODIGOS_ESPECIALES = {
-    'resultados.ver': 'Consultar resultados',
+    'resultados.ver': 'Consultar resultados en vivo',
+    'inscripciones.gestionar': 'Inscribir votantes a una edición',
     'padron.ver': 'Consultar padrón',
     'auditoria.ver': 'Consultar auditoría',
     'discrepancias.ver': 'Consultar discrepancias',
@@ -60,13 +64,25 @@ PERMISOS_POR_ROL = {
         f'{modulo}.{accion}'
         for modulo in MODULOS_CRUD
         for accion in ('ver', 'crear', 'editar', 'eliminar')
-    ] + ['auditoria.ver', 'discrepancias.ver', 'discrepancias.resolver'],
+    ] + [
+        'auditoria.ver',
+        'discrepancias.ver',
+        'discrepancias.resolver',
+        'resultados.ver',
+        'inscripciones.gestionar',
+    ],
     'Organizador': [
         f'{modulo}.{accion}'
         for modulo in MODULOS_CRUD[:-1]
         for accion in ('ver', 'crear', 'editar', 'eliminar')
-    ] + ['resultados.ver', 'padron.ver', 'discrepancias.ver', 'discrepancias.resolver'],
-    'Votante': ['resultados.ver'],
+    ] + [
+        'resultados.ver',
+        'padron.ver',
+        'discrepancias.ver',
+        'discrepancias.resolver',
+        'inscripciones.gestionar',
+    ],
+    'Votante': [],
     'Auditor': [
         'resultados.ver',
         'padron.ver',
