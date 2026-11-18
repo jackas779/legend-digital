@@ -13,7 +13,13 @@ from django.db.models import Count, Q
 
 from back.apps.elecciones.ciclo import sello_de_urna
 from back.apps.elecciones.models import Edicion, Votacion
-from back.apps.votacion.models import ActaEscrutinio, PadronVotante, Voto
+from back.apps.votacion.models import (
+    ActaEscrutinio,
+    InscripcionEdicion,
+    PadronVotante,
+    Voto,
+    truncar_a_hora,
+)
 
 # Margen para no marcar como "fuera de horario" un voto que entró en el
 # mismo segundo del cierre (los relojes de BD y aplicación pueden diferir).
@@ -35,6 +41,7 @@ def verificar_edicion(edicion):
         hallazgos += _padron_contra_urna(votacion)
         hallazgos += _firmas(votacion)
         hallazgos += _votos_fuera_de_horario(edicion, votacion)
+        hallazgos += _no_inscritos(votacion)
         acta = actas.get(votacion.pk)
         if acta is not None:
             hallazgos += _acta_contra_urna(votacion, acta)
@@ -103,6 +110,9 @@ def _votos_fuera_de_horario(edicion, votacion):
     inicio = votacion.fecha_apertura
     if edicion.fecha_inicio and edicion.fecha_inicio > inicio:
         inicio = edicion.fecha_inicio
+    # Los votos se guardan redondeados a la hora (secreto del voto): un voto
+    # de las 10:45 queda a las 10:00 aunque la votación abrió a las 10:30.
+    inicio = truncar_a_hora(inicio)
 
     fuera = Voto.objects.filter(opcion__votacion=votacion).filter(
         Q(fecha_registro__lt=inicio - TOLERANCIA) | Q(fecha_registro__gt=fin + TOLERANCIA)
@@ -122,6 +132,33 @@ def _votos_fuera_de_horario(edicion, votacion):
             'votos': [str(pk) for pk in fuera.values_list('pk', flat=True)[:50]],
             'ventana': [inicio.isoformat(), fin.isoformat()],
         },
+    }]
+
+
+def _no_inscritos(votacion):
+    """En "solo inscritos": nadie marcado en el padrón sin inscripción previa."""
+    if not votacion.solo_inscritos:
+        return []
+    a_tiempo = InscripcionEdicion.objects.filter(
+        edicion_id=votacion.edicion_id,
+        fecha_inscripcion__lt=votacion.fecha_apertura,
+    ).values('usuario_id')
+    intrusos = (
+        PadronVotante.objects.filter(votacion=votacion, ha_votado=True)
+        .exclude(usuario_id__in=a_tiempo)
+        .count()
+    )
+    if not intrusos:
+        return []
+    return [{
+        'tipo': 'NO_INSCRITO',
+        'votacion': votacion,
+        'descripcion': (
+            f'«{votacion.nombre}» es solo para inscritos y {intrusos} participante(s) no '
+            'estaban inscritos antes de la apertura.'
+        ),
+        # Solo la cifra: el auditor no necesita saber quiénes son.
+        'evidencia': {'votacion': votacion.pk, 'participantes_no_inscritos': intrusos},
     }]
 
 

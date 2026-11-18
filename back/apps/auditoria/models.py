@@ -45,6 +45,7 @@ class Discrepancia(models.Model):
         ('VOTO_FUERA_DE_HORARIO', 'Voto registrado fuera del horario permitido'),
         ('ABIERTA_CON_EDICION_CERRADA', 'Votación abierta con la edición cerrada'),
         ('ACTA_DESCUADRADA', 'El acta no coincide con la urna'),
+        ('NO_INSCRITO', 'Votó alguien que no estaba inscrito a tiempo'),
         ('OTRA', 'Otra'),
     ]
 

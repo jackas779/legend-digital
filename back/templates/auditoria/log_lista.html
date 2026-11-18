@@ -8,8 +8,12 @@
     Eventos del sistema: ingresos a la cuenta, gestión electoral y emisión
     de votos. Cada evento lleva un hash encadenado con el anterior, de modo
     que una alteración de la tabla quedaría en evidencia. El voto se
-    registra sin la opción elegida, para no romper el secreto del voto.
+    registra sin la opción elegida ni quién votó, para no romper el secreto del voto.
   </p>
+  {% if vista_auditor %}
+    <p class="msg info">Vista de auditoría: se muestran las acciones del equipo de gestión y
+      los intentos fallidos de ingreso. La actividad individual de los votantes no se muestra.</p>
+  {% endif %}
 
   {% if eventos %}
     <div class="tabla-scroll"><table>
