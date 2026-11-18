@@ -23,7 +23,7 @@ def crear_escenario():
         nombre='Canción favorita del público',
         fecha_apertura=ahora - timedelta(hours=2),
         fecha_cierre=ahora + timedelta(days=1),
-        estado='ACTIVA',
+        estado='ABIERTA',
         mostrar_resultados_en_vivo=True,
     )
     cancion_a = Opcion.objects.create(votacion=votacion, nombre='Canción A', subtitulo='Artista A', orden=1)
@@ -31,7 +31,7 @@ def crear_escenario():
     return edicion, categoria, votacion, cancion_a, cancion_b
 
 
-def crear_votacion_extra(edicion, nombre_categoria, nombre_votacion, estado='ACTIVA', abierta=True, opcion='Opción extra'):
+def crear_votacion_extra(edicion, nombre_categoria, nombre_votacion, estado='ABIERTA', abierta=True, opcion='Opción extra'):
     ahora = timezone.now()
     categoria = Categoria.objects.create(nombre=nombre_categoria)
     votacion = Votacion.objects.create(
@@ -172,7 +172,7 @@ class FlujoVotacionMVTTest(TestCase):
             nombre='Mejor artista del público',
             fecha_apertura=ahora - timedelta(hours=2),
             fecha_cierre=ahora + timedelta(days=1),
-            estado='ACTIVA',
+            estado='ABIERTA',
             mostrar_resultados_en_vivo=True,
         )
         artista_x = Opcion.objects.create(votacion=subevento_b, nombre='Artista X', orden=1)
@@ -248,7 +248,7 @@ class FlujoVotacionMVTTest(TestCase):
             self.edicion,
             'Letra inédita',
             'Mejor letra',
-            estado='FINALIZADA',
+            estado='CERRADA',
             abierta=False,
         )
         self.client.force_login(self.user)
@@ -443,7 +443,7 @@ class ResultadosVisibilidadTests(TestCase):
 
         cache.clear()
         call_command('cargar_permisos', stdout=io.StringIO())
-        # R2: ACTIVA sin resultados en vivo.
+        # R2: ABIERTA sin resultados en vivo.
         self.edicion, self.categoria, self.votacion, self.cancion_a, self.cancion_b = (
             crear_escenario()
         )
@@ -483,8 +483,8 @@ class ResultadosVisibilidadTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 200)
 
-    def test_finalizada_es_publica(self):
-        self.votacion.estado = 'FINALIZADA'
+    def test_cerrada_es_publica(self):
+        self.votacion.estado = 'CERRADA'
         self.votacion.save(update_fields=['estado'])
         self.client.logout()
 
@@ -566,7 +566,7 @@ class SimularVotacionTests(TestCase):
     def test_sin_votaciones_activas_falla_con_mensaje(self):
         from django.core.management import CommandError, call_command
 
-        self.votacion.estado = 'FINALIZADA'
+        self.votacion.estado = 'CERRADA'
         self.votacion.save(update_fields=['estado'])
 
         with self.assertRaises(CommandError):
