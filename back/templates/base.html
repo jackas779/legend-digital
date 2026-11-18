@@ -375,6 +375,17 @@
     .ronda-derivada { border-left: 4px solid var(--sun); }
     .resultado-voto { margin: .3rem 0; font-size: .9rem; }
     .badge.pasa { color: #0b5d3a; background: #d6f0e1; }
+    .chip-ok { color: #0b5d3a; background: #d6f0e1; }
+    .chip-alerta { color: #8c1d18; background: #fdecea; }
+    .dos-columnas { display: grid; gap: 1.25rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
+    @media (min-width: 900px) { .dos-columnas { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } }
+    .dos-columnas .card h2 { margin-top: 0; }
+    .dos-columnas textarea { width: 100%; min-height: 9rem; font-family: inherit; }
+    .lista-limpia { list-style: none; padding: 0; margin: .4rem 0 0; display: grid; gap: .45rem; }
+    .lista-limpia li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .4rem; }
+    .informe-inscripcion { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--line); }
+    .informe-inscripcion .chip { margin-right: .3rem; }
+    #buscar-inscrito { max-width: 240px; }
     .barra-voto {
       position: sticky;
       bottom: .75rem;

@@ -5,58 +5,143 @@
 {% block content %}
   <p class="crumbs"><a href="{% url 'gestion:edicion_gestionar' edicion.id %}">← {{ edicion }}</a></p>
 
-  <div class="pagina-head">
-    <div>
-      <h1>Inscritos de {{ edicion }}</h1>
-      <p class="lead">En las votaciones «solo inscritos» vota quien se inscribió antes de que
-        abrieran. Los votantes también pueden inscribirse solos desde la página de la edición.</p>
+  <header class="panel-edicion">
+    <div class="panel-edicion-texto">
+      <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
+      <h1>Inscritos</h1>
+      <p class="meta">En las votaciones «solo inscritos» vota quien se inscribió <strong>antes de que abrieran</strong>.
+        Los votantes también pueden inscribirse solos desde la página de la edición.</p>
+      <div class="cifras">
+        <div><b class="cifra">{{ inscripciones|length }}</b><span>inscrito{{ inscripciones|length|pluralize }}</span></div>
+        <div><b class="cifra">{{ por_votante }}</b><span>por sí mismo{{ por_votante|pluralize }}</span></div>
+        <div><b class="cifra">{{ por_organizador }}</b><span>por el organizador</span></div>
+      </div>
     </div>
-  </div>
+  </header>
 
-  {% if admite %}
-    <section class="panel-form">
-      <h2>Inscribir por documento</h2>
-      {% url 'gestion:inscritos' edicion.id as cancelar %}
-      {% include 'gestion/_formulario.html' %}
+  {# Para qué sirve la lista: qué votaciones la usan y hasta cuándo cuenta inscribirse. #}
+  {% if con_inscripcion %}
+    <section class="ciclo-aviso">
+      <p><strong>Votaciones que exigen inscripción</strong></p>
+      <ul class="lista-limpia">
+        {% for votacion in con_inscripcion %}
+          <li>
+            <span>{{ votacion.nombre }} <span class="meta">· {{ votacion.categoria }}</span></span>
+            {% if votacion.inscripcion_abierta %}
+              <span class="chip chip-ok">Inscripción abierta: <span data-hasta="{{ votacion.fecha_apertura|date:'c' }}" data-prefijo="cierra en" data-final="cerrada">hasta el {{ votacion.fecha_apertura|date:"j b, H:i" }}</span></span>
+            {% else %}
+              <span class="chip">Lista cerrada · {{ votacion.habilitados }} habilitado{{ votacion.habilitados|pluralize }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
     </section>
   {% else %}
-    <p class="msg info">La edición está {{ edicion.get_estado_display|lower }}: ya no admite inscripciones.</p>
+    <p class="msg info">Ninguna votación de esta edición es «solo inscritos» todavía: hoy todas son libres.
+      La lista sirve cuando configures una votación con ese modo.</p>
   {% endif %}
 
-  {% if informe %}
-    <div class="msg info">
-      <p><strong>{{ informe.inscritos|length }}</strong> inscrito(s) ·
-        <strong>{{ informe.ya_inscritos|length }}</strong> ya estaban ·
-        <strong>{{ informe.sin_cuenta|length }}</strong> sin cuenta ·
-        <strong>{{ informe.no_votantes|length }}</strong> no son votantes.</p>
-      {% if informe.sin_cuenta %}<p>Sin cuenta: {{ informe.sin_cuenta|join:", " }}</p>{% endif %}
-      {% if informe.no_votantes %}<p>No son votantes: {{ informe.no_votantes|join:", " }}</p>{% endif %}
-    </div>
-  {% endif %}
+  <div class="dos-columnas">
+    <section class="card">
+      <h2>Agregar votantes</h2>
+      {% if admite %}
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <div class="campo">
+            <label for="{{ form.documentos.id_for_label }}">Documentos</label>
+            {{ form.documentos }}
+            <p class="ayuda">Pega la lista: uno por línea o separados por coma. Solo se inscriben cuentas con rol Votante.</p>
+            <p class="ayuda" id="conteo-documentos" aria-live="polite"></p>
+            {% for error in form.documentos.errors %}<p class="errors">{{ error }}</p>{% endfor %}
+          </div>
+          <div class="acciones-form">
+            <button type="submit">Inscribir votantes</button>
+          </div>
+        </form>
+      {% else %}
+        <p class="meta">La edición está {{ edicion.get_estado_display|lower }}: ya no admite inscripciones.</p>
+      {% endif %}
 
-  <h2>{{ inscripciones|length }} inscrito{{ inscripciones|length|pluralize }}</h2>
-  {% if inscripciones %}
-    <div class="tabla-scroll"><table>
-      <thead><tr><th>Documento</th><th>Nombre</th><th>Fecha</th><th>Inscrito por</th><th></th></tr></thead>
-      <tbody>
-        {% for inscripcion in inscripciones %}
-          <tr>
-            <td>{{ inscripcion.usuario.perfil_usuario.documento|default:"—" }}</td>
-            <td>{{ inscripcion.usuario.get_full_name|default:inscripcion.usuario.username }}</td>
-            <td>{{ inscripcion.fecha_inscripcion|date:"j b Y, H:i" }}</td>
-            <td>{% if inscripcion.origen == 'ORGANIZADOR' %}{{ inscripcion.inscrito_por.username|default:"organizador" }}{% else %}el votante{% endif %}</td>
-            <td>
-              {% if puede_retirar %}
-                <form method="post" action="{% url 'gestion:inscrito_retirar' edicion.id inscripcion.id %}">
-                  {% csrf_token %}<button type="submit" class="ghost peligro mini">Retirar</button>
-                </form>
-              {% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table></div>
-  {% else %}
-    <p class="empty">Todavía no hay inscritos.</p>
-  {% endif %}
+      {% if informe %}
+        <div class="informe-inscripcion">
+          <p><span class="chip chip-ok">{{ informe.inscritos|length }} inscrito{{ informe.inscritos|length|pluralize }}</span>
+            {% if informe.ya_inscritos %}<span class="chip">{{ informe.ya_inscritos|length }} ya estaba{{ informe.ya_inscritos|length|pluralize:"n" }}</span>{% endif %}
+            {% if informe.sin_cuenta %}<span class="chip chip-alerta">{{ informe.sin_cuenta|length }} sin cuenta</span>{% endif %}
+            {% if informe.no_votantes %}<span class="chip chip-alerta">{{ informe.no_votantes|length }} no son votantes</span>{% endif %}
+          </p>
+          {% if informe.sin_cuenta %}<p class="meta"><strong>Sin cuenta:</strong> {{ informe.sin_cuenta|join:", " }}</p>{% endif %}
+          {% if informe.no_votantes %}<p class="meta"><strong>No son votantes:</strong> {{ informe.no_votantes|join:", " }}</p>{% endif %}
+        </div>
+      {% endif %}
+    </section>
+
+    <section class="card">
+      <div class="seccion-head">
+        <h2>Lista de inscritos</h2>
+        {% if inscripciones %}<input type="search" id="buscar-inscrito" placeholder="Buscar nombre o documento" aria-label="Buscar inscrito">{% endif %}
+      </div>
+      {% if inscripciones %}
+        <div class="tabla-scroll"><table id="tabla-inscritos">
+          <thead><tr><th>Votante</th><th>Inscrito</th><th></th></tr></thead>
+          <tbody>
+            {% for inscripcion in inscripciones %}
+              <tr>
+                <td>
+                  <strong>{{ inscripcion.usuario.get_full_name|default:inscripcion.usuario.username }}</strong><br>
+                  <span class="meta">{{ inscripcion.usuario.perfil_usuario.documento|default:"sin documento" }}</span>
+                </td>
+                <td>
+                  {{ inscripcion.fecha_inscripcion|date:"j b Y, H:i" }}<br>
+                  <span class="meta">{% if inscripcion.origen == 'ORGANIZADOR' %}por {{ inscripcion.inscrito_por.get_full_name|default:inscripcion.inscrito_por.username|default:"el organizador" }}{% else %}por sí mismo{% endif %}</span>
+                </td>
+                <td>
+                  {% if puede_retirar %}
+                    <form method="post" action="{% url 'gestion:inscrito_retirar' edicion.id inscripcion.id %}">
+                      {% csrf_token %}<button type="submit" class="ghost peligro mini">Retirar</button>
+                    </form>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table></div>
+        <p class="meta" id="sin-resultados" hidden>Nadie coincide con la búsqueda.</p>
+        {% if not puede_retirar %}<p class="meta">Con la edición activa la lista ya no se recorta: solo se agregan inscritos.</p>{% endif %}
+      {% else %}
+        <p class="empty">Todavía no hay inscritos.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <script>
+    (function () {
+      // Cuenta en vivo cuántos documentos distintos se van a procesar.
+      const area = document.getElementById('{{ form.documentos.id_for_label }}');
+      const conteo = document.getElementById('conteo-documentos');
+      if (area && conteo) {
+        const contar = function () {
+          const unicos = new Set(area.value.split(/[\s,;]+/).filter(Boolean));
+          conteo.textContent = unicos.size ? unicos.size + ' documento' + (unicos.size === 1 ? '' : 's') + ' para revisar' : '';
+        };
+        area.addEventListener('input', contar);
+        contar();
+      }
+      // Filtra la tabla por nombre o documento.
+      const buscar = document.getElementById('buscar-inscrito');
+      const filas = document.querySelectorAll('#tabla-inscritos tbody tr');
+      const vacio = document.getElementById('sin-resultados');
+      if (buscar) {
+        buscar.addEventListener('input', function () {
+          const texto = buscar.value.trim().toLowerCase();
+          let visibles = 0;
+          filas.forEach(function (fila) {
+            const coincide = fila.textContent.toLowerCase().includes(texto);
+            fila.hidden = !coincide;
+            visibles += coincide;
+          });
+          vacio.hidden = visibles > 0;
+        });
+      }
+    })();
+  </script>
 {% endblock %}

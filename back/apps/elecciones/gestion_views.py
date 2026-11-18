@@ -972,6 +972,24 @@ def inscritos(request, edicion_id):
             messages.success(request, f'{len(informe["inscritos"])} votante(s) inscrito(s).')
             form = InscripcionListaForm()
 
+    inscripciones = list(
+        edicion.inscripciones.select_related('usuario__perfil_usuario', 'inscrito_por')
+        .order_by('-fecha_inscripcion')
+    )
+    # Votaciones que exigen inscripción: para cada una, la inscripción
+    # "cierra" en su apertura (quien se inscriba después no vota en ella).
+    con_inscripcion = list(
+        edicion.votaciones.filter(modo_participacion=Votacion.INSCRITOS)
+        .select_related('categoria')
+        .order_by('fecha_apertura')
+    )
+    ahora = timezone.now()
+    for votacion in con_inscripcion:
+        votacion.inscripcion_abierta = votacion.fecha_apertura > ahora
+        votacion.habilitados = sum(
+            1 for i in inscripciones if i.fecha_inscripcion < votacion.fecha_apertura
+        )
+
     return render(
         request,
         'gestion/inscritos.html',
@@ -979,9 +997,10 @@ def inscritos(request, edicion_id):
             'edicion': edicion,
             'form': form,
             'informe': informe,
-            'inscripciones': edicion.inscripciones.select_related(
-                'usuario__perfil_usuario', 'inscrito_por'
-            ),
+            'inscripciones': inscripciones,
+            'por_votante': sum(1 for i in inscripciones if i.origen == 'VOTANTE'),
+            'por_organizador': sum(1 for i in inscripciones if i.origen == 'ORGANIZADOR'),
+            'con_inscripcion': con_inscripcion,
             'admite': admite_inscripciones(edicion, por_organizador=True),
             'puede_retirar': edicion.estado in (Edicion.BORRADOR, Edicion.PROGRAMADA),
         },
