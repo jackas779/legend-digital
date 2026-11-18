@@ -30,13 +30,28 @@ def catalogo():
     return catalogo
 
 
+# Códigos fuera del CRUD: lectura y el flujo de discrepancias.
+#  - discrepancias.reportar: registrar hallazgos y verificar su resolución
+#    (confirmar o reabrir). Es del auditor.
+#  - discrepancias.resolver: resolver o descartar. Es del organizador; si su
+#    rol no lo tiene, la discrepancia pasa al administrador.
+CODIGOS_ESPECIALES = {
+    'resultados.ver': 'Consultar resultados',
+    'padron.ver': 'Consultar padrón',
+    'auditoria.ver': 'Consultar auditoría',
+    'discrepancias.ver': 'Consultar discrepancias',
+    'discrepancias.reportar': 'Reportar y verificar discrepancias',
+    'discrepancias.resolver': 'Resolver discrepancias',
+}
+
+
 def codigos_del_catalogo():
     """Todos los códigos del catálogo, más la aplanación por rol."""
     return [
         codigo
         for modulo in catalogo().values()
         for codigo, _ in modulo
-    ] + ['resultados.ver', 'padron.ver', 'auditoria.ver']
+    ] + list(CODIGOS_ESPECIALES)
 
 
 # Asignación por rol (tabla del plan, bloque 3).
@@ -45,14 +60,20 @@ PERMISOS_POR_ROL = {
         f'{modulo}.{accion}'
         for modulo in MODULOS_CRUD
         for accion in ('ver', 'crear', 'editar', 'eliminar')
-    ] + ['auditoria.ver'],
+    ] + ['auditoria.ver', 'discrepancias.ver', 'discrepancias.resolver'],
     'Organizador': [
         f'{modulo}.{accion}'
         for modulo in MODULOS_CRUD[:-1]
         for accion in ('ver', 'crear', 'editar', 'eliminar')
-    ] + ['resultados.ver', 'padron.ver'],
+    ] + ['resultados.ver', 'padron.ver', 'discrepancias.ver', 'discrepancias.resolver'],
     'Votante': ['resultados.ver'],
-    'Auditor': ['resultados.ver', 'padron.ver', 'auditoria.ver'],
+    'Auditor': [
+        'resultados.ver',
+        'padron.ver',
+        'auditoria.ver',
+        'discrepancias.ver',
+        'discrepancias.reportar',
+    ],
 }
 
 

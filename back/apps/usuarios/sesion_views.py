@@ -91,7 +91,7 @@ def acceder(request):
             # Edición activa con la votación lanzada más recientemente: da
             # contexto real al panel de la izquierda del login.
             'edicion_destacada': (
-                Edicion.objects.filter(estado='ACTIVA', votaciones__estado='ACTIVA')
+                Edicion.objects.filter(estado='ACTIVA', votaciones__estado='ABIERTA')
                 .order_by('-votaciones__fecha_apertura')
                 .first()
             ),

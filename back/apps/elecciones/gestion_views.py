@@ -1,20 +1,26 @@
-"""Gestión de Ediciones y Categorías por el sitio MVT (ED1-ED4, CA1-CA3).
+"""Gestión de Ediciones, Categorías, Votaciones y Opciones por el sitio MVT.
 
-Toda la gestión exige permisos del catálogo vía ``@requiere_permiso``; el
-bloqueo de borrados y las transiciones de estado se validan aquí.
+Toda la gestión exige permisos del catálogo vía ``@requiere_permiso``. Los
+cambios de estado no se hacen aquí: se piden a ``elecciones.ciclo``, que
+aplica las reglas (validación al programar, cierre en cascada, escrutinio
+y finalización automática). Aquí solo se decide qué se puede editar según
+el estado de la edición.
 """
 
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from back.apps.auditoria.servicio import registrar_evento
 from back.apps.usuarios.permisos import requiere_permiso, tiene_permiso
 
+from . import ciclo
 from .gestion_forms import (
     CategoriaForm,
+    CierreAnticipadoForm,
     EdicionCategoriaForm,
     EdicionForm,
     OpcionForm,
@@ -43,44 +49,72 @@ def _volver(request, por_defecto, *args):
     return redirect(_siguiente(request) or por_defecto, *args)
 
 
+def _informar_transicion_invalida(request, error):
+    messages.error(request, str(error))
+    for detalle in error.errores:
+        messages.warning(request, detalle)
+
+
 # --------------------------------------------------------------------------
 # Ediciones (ED1, ED2, ED3, ED4)
 # --------------------------------------------------------------------------
 
 @requiere_permiso('ediciones.ver')
 def edicion_lista(request):
-    """ED1: nombre, año, estado y cantidad de votaciones."""
+    """ED1: nombre, año, estado, periodo y cantidad de votaciones."""
     return render(
         request,
         'gestion/edicion_lista.html',
         {
             'ediciones': (
-                Edicion.objects.annotate(num_votaciones=Count('votaciones'))
+                Edicion.objects.annotate(
+                    num_votaciones=Count('votaciones', distinct=True),
+                    num_pendientes=Count(
+                        'discrepancias',
+                        filter=Q(discrepancias__estado='ABIERTA'),
+                        distinct=True,
+                    ),
+                )
                 .order_by('-anio', 'nombre')
             ),
             'puede_crear': tiene_permiso(request.user, 'ediciones.crear'),
+            'puede_editar': tiene_permiso(request.user, 'ediciones.editar'),
+            'puede_eliminar': tiene_permiso(request.user, 'ediciones.eliminar'),
         },
     )
 
 
 @requiere_permiso('ediciones.crear')
 def edicion_crear(request):
-    """ED2: alta de una edición."""
+    """ED2: alta de una edición; siempre nace en BORRADOR."""
     form = EdicionForm(data=request.POST or None)
 
     if request.method == 'POST' and form.is_valid():
-        edicion = form.save()
+        edicion = form.save(commit=False)
+        edicion.creador = getattr(request.user, 'perfil_usuario', None)
+        edicion.save()
         registrar_evento(request, 'ediciones', 'edicion_creada', {'id': edicion.id})
-        messages.success(request, f'Edición «{edicion}» creada.')
-        return redirect('gestion:ediciones')
+        messages.success(
+            request,
+            f'Edición «{edicion}» creada en borrador. Agrega sus categorías y '
+            'prográmala cuando esté lista.',
+        )
+        return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
 
     return render(request, 'gestion/edicion_form.html', {'form': form, 'titulo': 'Nueva edición'})
 
 
 @requiere_permiso('ediciones.editar')
 def edicion_editar(request, edicion_id):
-    """ED2: edición de una edición y sus datos."""
+    """ED2: en BORRADOR se edita todo; después, solo el nombre."""
     edicion = get_object_or_404(Edicion, pk=edicion_id)
+    if edicion.estado in (Edicion.ACTIVA, Edicion.CERRANDO, Edicion.FINALIZADA):
+        messages.warning(
+            request,
+            f'La edición está {edicion.get_estado_display().upper()}: sus datos ya no se editan.',
+        )
+        return _volver(request, 'gestion:edicion_gestionar', edicion.id)
+
     form = EdicionForm(data=request.POST or None, instance=edicion)
 
     if request.method == 'POST' and form.is_valid():
@@ -103,14 +137,15 @@ def edicion_editar(request, edicion_id):
 
 @requiere_permiso('ediciones.ver')
 def edicion_gestionar(request, edicion_id):
-    """Panel de una edición: sus categorías, votaciones y acciones.
+    """Panel de una edición: estado, periodo, categorías, votaciones y acciones.
 
     Una categoría forma parte de la edición cuando la edición tiene al menos
-    una votación en ella. Desde aquí se agregan categorías (creando su
-    votación) y se quitan las que aún no tienen votos.
+    una votación en ella. Las categorías solo se agregan y quitan con la
+    edición en BORRADOR.
     """
     edicion = get_object_or_404(Edicion, pk=edicion_id)
-    puede_agregar = tiene_permiso(request.user, 'votaciones.crear')
+    en_borrador = edicion.admite_cambios_de_estructura
+    puede_agregar = en_borrador and tiene_permiso(request.user, 'votaciones.crear')
     puede_crear_categoria = tiene_permiso(request.user, 'categorias.crear')
 
     form = None
@@ -135,14 +170,15 @@ def edicion_gestionar(request, edicion_id):
                     nombre=datos['nombre_votacion'].strip(),
                     fecha_apertura=datos['fecha_apertura'],
                     fecha_cierre=datos['fecha_cierre'],
-                    estado='BORRADOR',
+                    estado=Votacion.BORRADOR,
                     mostrar_resultados_en_vivo=True,
                 )
             registrar_evento(request, 'votaciones', 'votacion_creada', {'id': votacion.id})
             messages.success(
                 request,
                 f'«{categoria.nombre}» ya forma parte de {edicion}. Agrega las '
-                f'opciones de «{votacion.nombre}» y ábrela cuando esté lista.',
+                f'opciones de «{votacion.nombre}»; se abrirá sola en su fecha '
+                'cuando la edición esté programada.',
             )
             return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
 
@@ -151,10 +187,14 @@ def edicion_gestionar(request, edicion_id):
         .annotate(
             num_votos=Count('opciones__votos', distinct=True),
             num_opciones=Count('opciones', distinct=True),
+            num_validas=Count(
+                'opciones', filter=Q(opciones__es_voto_blanco=False), distinct=True
+            ),
         )
         .order_by('categoria__nombre', 'nombre')
     )
 
+    puede_editar = tiene_permiso(request.user, 'ediciones.editar')
     return render(
         request,
         'gestion/edicion_gestionar.html',
@@ -163,10 +203,19 @@ def edicion_gestionar(request, edicion_id):
             'votaciones': votaciones,
             'num_categorias': len({v.categoria_id for v in votaciones}),
             'total_votos': sum(v.num_votos for v in votaciones),
+            'num_por_escrutar': sum(1 for v in votaciones if v.estado == Votacion.CERRADA),
             'form': form,
-            'puede_editar': tiene_permiso(request.user, 'ediciones.editar'),
+            'en_borrador': en_borrador,
+            # Qué le falta para programarse, para mostrarlo antes de intentarlo.
+            'pendientes_programar': (
+                ciclo.errores_para_programar(edicion) if en_borrador else []
+            ),
+            'puede_editar': puede_editar,
+            'puede_editar_datos': puede_editar and edicion.estado in (
+                Edicion.BORRADOR, Edicion.PROGRAMADA
+            ),
             'puede_editar_votaciones': tiene_permiso(request.user, 'votaciones.editar'),
-            'puede_quitar': tiene_permiso(request.user, 'votaciones.eliminar'),
+            'puede_quitar': en_borrador and tiene_permiso(request.user, 'votaciones.eliminar'),
         },
     )
 
@@ -175,18 +224,27 @@ def edicion_gestionar(request, edicion_id):
 def edicion_quitar_categoria(request, edicion_id, categoria_id):
     """Quita una categoría de la edición borrando sus votaciones.
 
-    Se bloquea si alguna de esas votaciones ya tiene votos: el conteo debe
-    conservarse. La categoría en sí no se borra; sigue disponible para otras
-    ediciones.
+    Solo con la edición en BORRADOR (la estructura se fija al programar) y
+    nunca si alguna de esas votaciones tiene votos. La categoría en sí no se
+    borra: sigue disponible para otras ediciones.
     """
     edicion = get_object_or_404(Edicion, pk=edicion_id)
     categoria = get_object_or_404(Categoria, pk=categoria_id)
     votaciones = list(edicion.votaciones.filter(categoria=categoria))
     con_votos = [v for v in votaciones if v.total_votos > 0]
+    volver = redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
 
     if not votaciones:
         messages.warning(request, f'«{categoria.nombre}» no forma parte de {edicion}.')
-        return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
+        return volver
+
+    if not edicion.admite_cambios_de_estructura:
+        messages.error(
+            request,
+            f'La edición está {edicion.get_estado_display().upper()}: las categorías '
+            'solo se quitan en BORRADOR.',
+        )
+        return volver
 
     if request.method == 'POST':
         if con_votos:
@@ -205,7 +263,7 @@ def edicion_quitar_categoria(request, edicion_id, categoria_id):
                 {'edicion': edicion.id, 'categoria': categoria.id},
             )
             messages.success(request, f'«{categoria.nombre}» se quitó de {edicion}.')
-        return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
+        return volver
 
     return render(
         request,
@@ -221,11 +279,19 @@ def edicion_quitar_categoria(request, edicion_id, categoria_id):
 
 @requiere_permiso('ediciones.eliminar')
 def edicion_eliminar(request, edicion_id):
-    """ED3: confirmación previa y bloqueo si hay votos en sus votaciones."""
+    """ED3: solo en BORRADOR o PROGRAMADA y sin votos (nunca hubo votación)."""
     edicion = get_object_or_404(Edicion, pk=edicion_id)
     con_votos = [v for v in edicion.votaciones.all() if v.total_votos > 0]
+    bloqueada_por_estado = edicion.estado not in (Edicion.BORRADOR, Edicion.PROGRAMADA)
 
     if request.method == 'POST':
+        if bloqueada_por_estado:
+            messages.error(
+                request,
+                f'No se puede eliminar «{edicion}»: está '
+                f'{edicion.get_estado_display().upper()} y su historial se conserva.',
+            )
+            return redirect('gestion:ediciones')
         if con_votos:
             nombres = ', '.join(v.nombre for v in con_votos)
             messages.error(
@@ -244,44 +310,121 @@ def edicion_eliminar(request, edicion_id):
     return render(
         request,
         'gestion/edicion_confirmar_borrar.html',
-        {'objeto': edicion, 'con_votos': con_votos},
+        {
+            'objeto': edicion,
+            'con_votos': con_votos,
+            'bloqueada_por_estado': bloqueada_por_estado,
+        },
     )
 
 
 @requiere_permiso('ediciones.editar')
-def edicion_publicar(request, edicion_id):
-    """ED4: BORRADOR/PROGRAMADA → ACTIVA (solo por POST)."""
+def edicion_programar(request, edicion_id):
+    """BORRADOR → PROGRAMADA, con validación completa (solo por POST)."""
     edicion = get_object_or_404(Edicion, pk=edicion_id)
 
     if request.method == 'POST':
-        if edicion.estado == 'FINALIZADA':
-            messages.error(request, 'Una edición FINALIZADA no cambia de estado.')
-        elif edicion.estado in ('BORRADOR', 'PROGRAMADA'):
-            edicion.estado = 'ACTIVA'
-            edicion.save(update_fields=['estado'])
-            registrar_evento(request, 'ediciones', 'edicion_publicada', {'id': edicion_id})
-            messages.success(request, f'Edición «{edicion}» publicada (ACTIVA).')
+        try:
+            ciclo.programar(edicion, request)
+        except ciclo.TransicionInvalida as error:
+            _informar_transicion_invalida(request, error)
         else:
-            messages.warning(request, f'La edición ya está en estado {edicion.estado}.')
+            if edicion.estado == Edicion.ACTIVA:
+                messages.success(
+                    request,
+                    f'Edición «{edicion}» programada y ya ACTIVA: su fecha de inicio llegó.',
+                )
+            else:
+                inicio = timezone.localtime(edicion.fecha_inicio)
+                messages.success(
+                    request,
+                    f'Edición «{edicion}» programada. Se activará sola el '
+                    f'{inicio:%d/%m/%Y a las %H:%M}.',
+                )
 
-    return _volver(request, 'gestion:ediciones')
+    return _volver(request, 'gestion:edicion_gestionar', edicion.id)
 
 
 @requiere_permiso('ediciones.editar')
-def edicion_finalizar(request, edicion_id):
-    """ED4: cierre definitivo; desde FINALIZADA no retrocede."""
+def edicion_desprogramar(request, edicion_id):
+    """PROGRAMADA → BORRADOR para corregir (solo por POST)."""
     edicion = get_object_or_404(Edicion, pk=edicion_id)
 
     if request.method == 'POST':
-        if edicion.estado == 'FINALIZADA':
-            messages.warning(request, f'La edición «{edicion}» ya está FINALIZADA.')
+        try:
+            ciclo.desprogramar(edicion, request)
+        except ciclo.TransicionInvalida as error:
+            _informar_transicion_invalida(request, error)
         else:
-            edicion.estado = 'FINALIZADA'
-            edicion.save(update_fields=['estado'])
-            registrar_evento(request, 'ediciones', 'edicion_finalizada', {'id': edicion_id})
-            messages.success(request, f'Edición «{edicion}» finalizada.')
+            messages.success(request, f'Edición «{edicion}» devuelta a borrador.')
 
-    return _volver(request, 'gestion:ediciones')
+    return _volver(request, 'gestion:edicion_gestionar', edicion.id)
+
+
+@requiere_permiso('ediciones.editar')
+def edicion_cerrar(request, edicion_id):
+    """Cierre anticipado: ACTIVA → CERRANDO con motivo obligatorio."""
+    edicion = get_object_or_404(Edicion, pk=edicion_id)
+    if edicion.estado != Edicion.ACTIVA:
+        messages.warning(
+            request,
+            f'Solo se cierra anticipadamente una edición ACTIVA; esta está '
+            f'{edicion.get_estado_display().upper()}.',
+        )
+        return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
+
+    form = CierreAnticipadoForm(data=request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            ciclo.cerrar(
+                edicion, request, motivo=form.cleaned_data['motivo'], anticipado=True
+            )
+        except ciclo.TransicionInvalida as error:
+            _informar_transicion_invalida(request, error)
+        else:
+            messages.success(
+                request,
+                f'Edición «{edicion}» cerrada anticipadamente. Ya no recibe votos; '
+                'escruta sus votaciones para finalizarla.',
+            )
+        return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
+
+    return render(
+        request,
+        'gestion/edicion_cerrar.html',
+        {
+            'edicion': edicion,
+            'form': form,
+            'abiertas': edicion.votaciones.filter(estado=Votacion.ABIERTA),
+            'sin_abrir': edicion.votaciones.filter(
+                estado__in=(Votacion.BORRADOR, Votacion.LISTA)
+            ),
+        },
+    )
+
+
+@requiere_permiso('ediciones.editar')
+def edicion_escrutar(request, edicion_id):
+    """Genera el acta de cada votación CERRADA (solo por POST).
+
+    Cuando ya no queda nada por escrutar, la edición en escrutinio pasa
+    sola a FINALIZADA.
+    """
+    edicion = get_object_or_404(Edicion, pk=edicion_id)
+
+    if request.method == 'POST':
+        escrutadas = ciclo.escrutar_edicion(edicion, request)
+        if not escrutadas:
+            messages.info(request, 'No hay votaciones cerradas pendientes de escrutinio.')
+        elif edicion.estado == Edicion.FINALIZADA:
+            messages.success(
+                request,
+                f'{escrutadas} votación(es) escrutada(s). La edición «{edicion}» quedó FINALIZADA.',
+            )
+        else:
+            messages.success(request, f'{escrutadas} votación(es) escrutada(s).')
+
+    return _volver(request, 'gestion:edicion_gestionar', edicion.id)
 
 
 # --------------------------------------------------------------------------
@@ -290,22 +433,24 @@ def edicion_finalizar(request, edicion_id):
 
 @requiere_permiso('categorias.ver')
 def categoria_lista(request):
-    """CA1: muestra cuántas votaciones usan cada categoría."""
+    """CA1: catálogo global con usos; las archivadas van al final."""
     return render(
         request,
         'gestion/categoria_lista.html',
         {
             'categorias': Categoria.objects.annotate(
-                num_votaciones=Count('votaciones')
-            ),
+                num_votaciones=Count('votaciones', distinct=True),
+                num_ediciones=Count('votaciones__edicion', distinct=True),
+            ).order_by('archivada', 'nombre'),
             'puede_crear': tiene_permiso(request.user, 'categorias.crear'),
+            'puede_editar': tiene_permiso(request.user, 'categorias.editar'),
         },
     )
 
 
 @requiere_permiso('categorias.crear')
 def categoria_crear(request):
-    """CA2: alta; nombre único con error legible en el formulario."""
+    """CA2: alta de categoría con validación de nombre único."""
     form = CategoriaForm(data=request.POST or None)
 
     if request.method == 'POST' and form.is_valid():
@@ -319,7 +464,7 @@ def categoria_crear(request):
 
 @requiere_permiso('categorias.editar')
 def categoria_editar(request, categoria_id):
-    """CA2: edición; el duplicado revienta en el formulario, no en la BD."""
+    """CA2: edición; el nombre queda fijo si ya se usó en una edición finalizada."""
     categoria = get_object_or_404(Categoria, pk=categoria_id)
     form = CategoriaForm(data=request.POST or None, instance=categoria)
 
@@ -336,19 +481,43 @@ def categoria_editar(request, categoria_id):
     )
 
 
+@requiere_permiso('categorias.editar')
+def categoria_archivar(request, categoria_id):
+    """Archiva o reactiva una categoría (solo por POST).
+
+    Archivada deja de ofrecerse a ediciones nuevas, pero sigue apareciendo
+    en las ediciones donde ya se usó.
+    """
+    categoria = get_object_or_404(Categoria, pk=categoria_id)
+
+    if request.method == 'POST':
+        categoria.archivada = not categoria.archivada
+        categoria.save(update_fields=['archivada'])
+        accion = 'categoria_archivada' if categoria.archivada else 'categoria_reactivada'
+        registrar_evento(request, 'categorias', accion, {'id': categoria.id})
+        if categoria.archivada:
+            messages.success(
+                request,
+                f'«{categoria.nombre}» archivada: ya no se ofrece a ediciones nuevas.',
+            )
+        else:
+            messages.success(request, f'«{categoria.nombre}» vuelve a estar disponible.')
+
+    return redirect('gestion:categorias')
+
+
 @requiere_permiso('categorias.eliminar')
 def categoria_eliminar(request, categoria_id):
-    """CA3: bloquea el borrado si alguna votación la usa, con el motivo."""
+    """CA3: confirmación y bloqueo si alguna votación la usa (se archiva)."""
     categoria = get_object_or_404(Categoria, pk=categoria_id)
     usos = categoria.votaciones.all()
 
     if request.method == 'POST':
         if usos.exists():
-            nombres = ', '.join(v.nombre for v in usos[:5])
             messages.error(
                 request,
                 f'No se puede eliminar «{categoria.nombre}»: la usan '
-                f'{usos.count()} votación(es): {nombres}.',
+                f'{usos.count()} votación(es). Archívala para dejar de ofrecerla.',
             )
             return redirect('gestion:categorias')
 
@@ -369,8 +538,8 @@ def categoria_eliminar(request, categoria_id):
 # Votaciones (VO1, VO2, VO3, VO5)
 # --------------------------------------------------------------------------
 # VO4 (control de apertura) vive en el tarjetón: votacion.esta_abierta exige
-# estado=ACTIVA y la fecha actual dentro del rango; lo prueba el test de
-# 'votacion cerrada' y el nuevo test de apertura fuera de rango.
+# estado ABIERTA, la fecha actual dentro de su ventana y la edición ACTIVA
+# dentro de su periodo.
 
 @requiere_permiso('votaciones.ver')
 def votacion_lista(request):
@@ -398,13 +567,14 @@ def votacion_lista(request):
             'filtro_edicion': filtro_edicion,
             'filtro_categoria': filtro_categoria,
             'puede_crear': tiene_permiso(request.user, 'votaciones.crear'),
+            'puede_editar': tiene_permiso(request.user, 'votaciones.editar'),
         },
     )
 
 
 @requiere_permiso('votaciones.crear')
 def votacion_crear(request):
-    """VO2: alta con selects de edición y categoría.
+    """VO2: alta en una edición en BORRADOR; la votación nace en BORRADOR.
 
     ``?edicion=`` y ``?categoria=`` preseleccionan los selects cuando se
     llega desde el panel de una edición.
@@ -417,9 +587,11 @@ def votacion_crear(request):
     form = VotacionForm(data=request.POST or None, initial=inicial)
 
     if request.method == 'POST' and form.is_valid():
-        votacion = form.save()
+        votacion = form.save(commit=False)
+        votacion.estado = Votacion.BORRADOR
+        votacion.save()
         registrar_evento(request, 'votaciones', 'votacion_creada', {'id': votacion.id})
-        messages.success(request, f'Votación «{votacion.nombre}» creada.')
+        messages.success(request, f'Votación «{votacion.nombre}» creada en borrador.')
         return _volver(request, 'gestion:votaciones')
 
     return render(
@@ -431,8 +603,15 @@ def votacion_crear(request):
 
 @requiere_permiso('votaciones.editar')
 def votacion_editar(request, votacion_id):
-    """VO2 + VO3: edición y validación de fechas."""
-    votacion = get_object_or_404(Votacion, pk=votacion_id)
+    """VO2 + VO3: edición según el estado; las votaciones terminadas no se tocan."""
+    votacion = get_object_or_404(Votacion.objects.select_related('edicion'), pk=votacion_id)
+    if votacion.es_final or votacion.edicion.es_solo_lectura:
+        messages.warning(
+            request,
+            f'La votación está {votacion.get_estado_display().upper()}: ya no se edita.',
+        )
+        return _volver(request, 'gestion:votaciones')
+
     form = VotacionForm(data=request.POST or None, instance=votacion)
 
     if request.method == 'POST' and form.is_valid():
@@ -455,40 +634,35 @@ def votacion_editar(request, votacion_id):
 
 @requiere_permiso('votaciones.editar')
 def votacion_abrir(request, votacion_id):
-    """VO5: BORRADOR/PROGRAMADA → ACTIVA (solo por POST)."""
-    votacion = get_object_or_404(Votacion, pk=votacion_id)
+    """VO5: apertura adelantada LISTA → ABIERTA, solo con la edición ACTIVA."""
+    votacion = get_object_or_404(Votacion.objects.select_related('edicion'), pk=votacion_id)
 
     if request.method == 'POST':
-        if votacion.estado == 'FINALIZADA':
-            messages.error(request, 'Una votación FINALIZADA no se reabre.')
-        elif votacion.estado in ('BORRADOR', 'PROGRAMADA'):
-            votacion.estado = 'ACTIVA'
-            votacion.save(update_fields=['estado'])
-            registrar_evento(request, 'votaciones', 'votacion_abierta', {'id': votacion_id})
-            messages.success(request, f'Votación «{votacion.nombre}» abierta (ACTIVA).')
+        try:
+            ciclo.abrir_votacion(votacion, request)
+        except ciclo.TransicionInvalida as error:
+            _informar_transicion_invalida(request, error)
         else:
-            messages.warning(request, f'La votación ya está en estado {votacion.estado}.')
+            messages.success(request, f'Votación «{votacion.nombre}» abierta.')
 
     return _volver(request, 'gestion:votaciones')
 
 
 @requiere_permiso('votaciones.editar')
 def votacion_cerrar(request, votacion_id):
-    """VO5: cierre definitivo; no borra votos y habilita resultados."""
-    votacion = get_object_or_404(Votacion, pk=votacion_id)
+    """VO5: cierre ABIERTA → CERRADA; no borra votos y no se reabre."""
+    votacion = get_object_or_404(Votacion.objects.select_related('edicion'), pk=votacion_id)
 
     if request.method == 'POST':
-        if votacion.estado == 'FINALIZADA':
-            messages.warning(request, f'La votación «{votacion.nombre}» ya está FINALIZADA.')
+        try:
+            ciclo.cerrar_votacion(votacion, request)
+        except ciclo.TransicionInvalida as error:
+            _informar_transicion_invalida(request, error)
         else:
-            votacion.estado = 'FINALIZADA'
-            votacion.save(update_fields=['estado'])
-            registrar_evento(request, 'votaciones', 'votacion_cerrada', {'id': votacion_id})
-            total = votacion.total_votos
             messages.success(
                 request,
-                f'Votación «{votacion.nombre}» cerrada. Sus {total} voto(s) se '
-                'conservan y los resultados quedan visibles.',
+                f'Votación «{votacion.nombre}» cerrada. Sus {votacion.total_votos} '
+                'voto(s) se conservan y queda pendiente de escrutinio.',
             )
 
     return _volver(request, 'gestion:votaciones')
@@ -497,6 +671,17 @@ def votacion_cerrar(request, votacion_id):
 # --------------------------------------------------------------------------
 # Opciones dentro de una votación (OP1, OP2, OP3)
 # --------------------------------------------------------------------------
+# Se agregan y quitan solo con la votación en BORRADOR (edición en borrador);
+# con la votación LISTA se corrigen textos; abierta o terminada, nada.
+
+def _opciones_bloqueadas(request, votacion, accion):
+    messages.error(
+        request,
+        f'No se puede {accion} opciones: la votación está '
+        f'{votacion.get_estado_display().upper()}.',
+    )
+    return redirect('gestion:opcion_lista', votacion_id=votacion.id)
+
 
 @requiere_permiso('opciones.ver')
 def opcion_lista(request, votacion_id):
@@ -504,6 +689,7 @@ def opcion_lista(request, votacion_id):
     votacion = get_object_or_404(
         Votacion.objects.select_related('edicion', 'categoria'), pk=votacion_id
     )
+    en_borrador = votacion.estado == Votacion.BORRADOR
 
     return render(
         request,
@@ -515,7 +701,12 @@ def opcion_lista(request, votacion_id):
                 .annotate(num_votos=Count('votos'))
                 .order_by('orden', 'nombre')
             ),
-            'puede_crear': tiene_permiso(request.user, 'opciones.crear'),
+            'puede_crear': en_borrador and tiene_permiso(request.user, 'opciones.crear'),
+            'puede_editar': (
+                votacion.estado in (Votacion.BORRADOR, Votacion.LISTA)
+                and tiene_permiso(request.user, 'opciones.editar')
+            ),
+            'puede_eliminar': en_borrador and tiene_permiso(request.user, 'opciones.eliminar'),
         },
     )
 
@@ -524,6 +715,9 @@ def opcion_lista(request, votacion_id):
 def opcion_crear(request, votacion_id):
     """OP2: alta de opción con casilla única en la votación."""
     votacion = get_object_or_404(Votacion, pk=votacion_id)
+    if votacion.estado != Votacion.BORRADOR:
+        return _opciones_bloqueadas(request, votacion, 'agregar')
+
     form = OpcionForm(data=request.POST or None, votacion=votacion)
 
     if request.method == 'POST' and form.is_valid():
@@ -550,6 +744,9 @@ def opcion_editar(request, votacion_id, opcion_id):
     """OP2: edición con la casilla única por votación."""
     votacion = get_object_or_404(Votacion, pk=votacion_id)
     opcion = get_object_or_404(Opcion, pk=opcion_id, votacion=votacion)
+    if votacion.estado not in (Votacion.BORRADOR, Votacion.LISTA):
+        return _opciones_bloqueadas(request, votacion, 'editar')
+
     form = OpcionForm(data=request.POST or None, instance=opcion, votacion=votacion)
 
     if request.method == 'POST' and form.is_valid():
@@ -571,7 +768,7 @@ def opcion_editar(request, votacion_id, opcion_id):
 
 @requiere_permiso('opciones.eliminar')
 def opcion_eliminar(request, votacion_id, opcion_id):
-    """OP3: bloquea el borrado si la opción ya tiene votos."""
+    """OP3: solo en BORRADOR y nunca si la opción ya tiene votos."""
     votacion = get_object_or_404(Votacion, pk=votacion_id)
     opcion = get_object_or_404(Opcion, pk=opcion_id, votacion=votacion)
 
@@ -583,6 +780,8 @@ def opcion_eliminar(request, votacion_id, opcion_id):
                 f'{opcion.votos.count()} voto(s) y el conteo debe conservarse.',
             )
             return redirect('gestion:opcion_lista', votacion_id=votacion.id)
+        if votacion.estado != Votacion.BORRADOR:
+            return _opciones_bloqueadas(request, votacion, 'eliminar')
 
         nombre = opcion.nombre
         opcion.delete()

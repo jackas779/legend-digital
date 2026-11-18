@@ -22,7 +22,7 @@
   {% endif %}
   <div class="cta">
     <span class="enlace" style="color:var(--accent)">
-      {% if edicion.estado == 'FINALIZADA' %}Ver resultados →{% elif edicion.estado == 'PROGRAMADA' %}Ver detalles →{% else %}Ir a votar →{% endif %}
+      {% if edicion.estado == 'FINALIZADA' or edicion.estado == 'CERRANDO' %}Ver resultados →{% elif edicion.estado == 'PROGRAMADA' %}Ver detalles →{% else %}Ir a votar →{% endif %}
     </span>
   </div>
 </a>

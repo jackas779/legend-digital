@@ -47,16 +47,20 @@
         </div>
         <div class="acciones">
           <a class="button mini" href="{% url 'gestion:opcion_lista' votacion.id %}">Opciones</a>
-          <a class="button ghost mini" href="{% url 'gestion:votacion_editar' votacion.id %}">Editar</a>
-          {% if votacion.estado == 'BORRADOR' or votacion.estado == 'PROGRAMADA' %}
-            <form method="post" action="{% url 'gestion:votacion_abrir' votacion.id %}">
-              {% csrf_token %}<button type="submit" class="ghost mini">Abrir</button>
-            </form>
-          {% endif %}
-          {% if votacion.estado != 'FINALIZADA' %}
-            <form method="post" action="{% url 'gestion:votacion_cerrar' votacion.id %}">
-              {% csrf_token %}<button type="submit" class="ghost mini">Cerrar</button>
-            </form>
+          {% if puede_editar %}
+            {% if not votacion.es_final and votacion.edicion.estado != 'FINALIZADA' %}
+              <a class="button ghost mini" href="{% url 'gestion:votacion_editar' votacion.id %}">Editar</a>
+            {% endif %}
+            {% if votacion.estado == 'LISTA' and votacion.edicion.estado == 'ACTIVA' %}
+              <form method="post" action="{% url 'gestion:votacion_abrir' votacion.id %}">
+                {% csrf_token %}<button type="submit" class="ghost mini">Abrir ahora</button>
+              </form>
+            {% endif %}
+            {% if votacion.estado == 'ABIERTA' %}
+              <form method="post" action="{% url 'gestion:votacion_cerrar' votacion.id %}">
+                {% csrf_token %}<button type="submit" class="ghost mini">Cerrar</button>
+              </form>
+            {% endif %}
           {% endif %}
         </div>
       </article>

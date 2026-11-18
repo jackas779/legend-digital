@@ -17,6 +17,12 @@
     {% if puede_crear %}<a class="button" href="{% url 'gestion:opcion_crear' votacion.id %}">+ Nueva opción</a>{% endif %}
   </div>
 
+  {% if votacion.estado == 'LISTA' %}
+    <p class="msg info">La edición ya está programada: las opciones quedan fijas y solo se corrigen sus textos.</p>
+  {% elif votacion.estado != 'BORRADOR' %}
+    <p class="msg info">La votación está {{ votacion.get_estado_display|lower }}: sus opciones ya no se modifican.</p>
+  {% endif %}
+
   {% for opcion in opciones %}
     <article class="card fila-opcion">
       <span class="num-opcion{% if opcion.es_voto_blanco %} blanco{% endif %}">{{ opcion.orden }}</span>
@@ -27,8 +33,8 @@
       </div>
       <span class="meta">{{ opcion.num_votos }} voto{{ opcion.num_votos|pluralize }}</span>
       <div class="acciones">
-        <a class="button ghost mini" href="{% url 'gestion:opcion_editar' votacion.id opcion.id %}">Editar</a>
-        <a class="button ghost peligro mini" href="{% url 'gestion:opcion_eliminar' votacion.id opcion.id %}">Eliminar</a>
+        {% if puede_editar %}<a class="button ghost mini" href="{% url 'gestion:opcion_editar' votacion.id opcion.id %}">Editar</a>{% endif %}
+        {% if puede_eliminar %}<a class="button ghost peligro mini" href="{% url 'gestion:opcion_eliminar' votacion.id opcion.id %}">Eliminar</a>{% endif %}
       </div>
     </article>
   {% empty %}

@@ -83,10 +83,14 @@
                 {% else %}
                   <a class="button ancho" href="{% url 'tarjeton' votacion.pk %}">Votar</a>
                 {% endif %}
-              {% elif votacion.estado == 'ACTIVA' %}
+              {% elif votacion.estado == 'ABIERTA' %}
                 <span class="nota">Fuera del periodo de votación</span>
-              {% elif votacion.estado == 'PROGRAMADA' or votacion.estado == 'BORRADOR' %}
+              {% elif votacion.estado == 'LISTA' %}
+                <span class="nota">Abre el {{ votacion.fecha_apertura|date:"j b, H:i" }}</span>
+              {% elif votacion.estado == 'BORRADOR' %}
                 <span class="nota">Aún no está disponible</span>
+              {% elif votacion.estado == 'CANCELADA' %}
+                <span class="nota">Cancelada: nunca llegó a abrirse</span>
               {% else %}
                 <a class="enlace" href="{% url 'resultados' votacion.pk %}">Ver resultados</a>
               {% endif %}

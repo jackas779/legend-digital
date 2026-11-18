@@ -5,7 +5,9 @@
 {% block content %}
   <div class="panel-form">
     <h1>{{ titulo }}</h1>
-    <p class="lead">Nombre, año y estado del proceso electoral.</p>
+    <p class="lead">Nombre, año y periodo del proceso electoral. El estado no se edita aquí:
+      la edición se programa desde su panel, se activa sola en su fecha de inicio y se cierra
+      sola en su fecha de fin.</p>
     {% url 'gestion:ediciones' as cancelar %}
     {% include 'gestion/_formulario.html' %}
   </div>

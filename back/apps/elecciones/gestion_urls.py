@@ -29,15 +29,27 @@ urlpatterns = [
         gestion_views.edicion_eliminar,
         name='edicion_eliminar',
     ),
+    # Ciclo de vida: la activación, el cierre por fecha y la finalización
+    # son automáticos; aquí solo están las acciones humanas.
     path(
-        'ediciones/<int:edicion_id>/publicar/',
-        gestion_views.edicion_publicar,
-        name='edicion_publicar',
+        'ediciones/<int:edicion_id>/programar/',
+        gestion_views.edicion_programar,
+        name='edicion_programar',
     ),
     path(
-        'ediciones/<int:edicion_id>/finalizar/',
-        gestion_views.edicion_finalizar,
-        name='edicion_finalizar',
+        'ediciones/<int:edicion_id>/desprogramar/',
+        gestion_views.edicion_desprogramar,
+        name='edicion_desprogramar',
+    ),
+    path(
+        'ediciones/<int:edicion_id>/cerrar/',
+        gestion_views.edicion_cerrar,
+        name='edicion_cerrar',
+    ),
+    path(
+        'ediciones/<int:edicion_id>/escrutar/',
+        gestion_views.edicion_escrutar,
+        name='edicion_escrutar',
     ),
     path('categorias/', gestion_views.categoria_lista, name='categorias'),
     path('categorias/nueva/', gestion_views.categoria_crear, name='categoria_crear'),
@@ -45,6 +57,11 @@ urlpatterns = [
         'categorias/<int:categoria_id>/editar/',
         gestion_views.categoria_editar,
         name='categoria_editar',
+    ),
+    path(
+        'categorias/<int:categoria_id>/archivar/',
+        gestion_views.categoria_archivar,
+        name='categoria_archivar',
     ),
     path(
         'categorias/<int:categoria_id>/eliminar/',

@@ -4,7 +4,11 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from back.apps.usuarios.models import Permission, Role, RolPermiso
-from back.apps.usuarios.permisos import PERMISOS_POR_ROL, codigos_del_catalogo
+from back.apps.usuarios.permisos import (
+    CODIGOS_ESPECIALES,
+    PERMISOS_POR_ROL,
+    codigos_del_catalogo,
+)
 
 
 class Command(BaseCommand):
@@ -33,12 +37,12 @@ class Command(BaseCommand):
                 )
                 creados += created
 
-        for codigo in ('resultados.ver', 'padron.ver', 'auditoria.ver'):
+        for codigo, descripcion in CODIGOS_ESPECIALES.items():
             _, created = Permission.objects.get_or_create(
                 codigo=codigo,
                 defaults={
                     'modulo': codigo.split('.')[0],
-                    'descripcion': 'Consultar ' + codigo.split('.')[0],
+                    'descripcion': descripcion,
                 },
             )
             creados += created
