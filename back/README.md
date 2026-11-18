@@ -92,10 +92,51 @@ un cron). Además `Votacion.esta_abierta` revisa las fechas de la votación y
 de la edición, así que ningún voto entra fuera de tiempo.
 
 El auditor (`/auditoria/ediciones/`) ve verificaciones automáticas (padrón
-contra urna, firmas, votos fuera de horario, actas) y registra
-discrepancias; las resuelve el organizador con `discrepancias.resolver` o,
-si su rol no tiene ese permiso, el administrador. Una discrepancia abierta
-no bloquea la finalización.
+contra urna, firmas, votos fuera de horario, actas, votos de no inscritos)
+y registra discrepancias; las resuelve el organizador con
+`discrepancias.resolver` o, si su rol no tiene ese permiso, el
+administrador. Una discrepancia abierta no bloquea la finalización. El
+auditor audita el proceso y la urna, no a las personas: en su registro ve
+las acciones del equipo de gestión y los ingresos fallidos, no la actividad
+de cada votante.
+
+## Quién vota, rondas y resultados
+
+**Modo de participación (por votación):** `LIBRE` (cualquier votante con
+cuenta) o `INSCRITOS` (solo quien se inscribió a la edición antes de que
+esa votación abriera). Se inscribe el propio votante ("Inscribirme" en la
+página de la edición) o el organizador pegando documentos en
+`/gestion/ediciones/<id>/inscritos/`. Ejemplo: preselección libre y gran
+final solo para inscritos en la misma edición.
+
+**Regla de resultado (por votación):**
+
+| Regla | Qué pasa al escrutar |
+|---|---|
+| Mayoría simple | Gana quien saque más votos |
+| Mayoría absoluta (50 % + 1) | Si nadie la supera, los 2 primeros pasan a la segunda vuelta; si alguien la supera, la segunda vuelta se cancela |
+| Clasifican N | Los N primeros pasan a la siguiente ronda |
+| + Repetir si gana el blanco | Si el voto en blanco supera el 50 %, la ronda siguiente espera candidatos nuevos |
+
+El voto en blanco cuenta como voto válido (también para el 50 % + 1) pero
+nunca gana ni clasifica. La ronda siguiente se configura de antemano (sin
+candidatos) y los recibe, con sus fotos, al escrutar la anterior; una
+votación que alimenta otra ronda se escruta sola al cerrarse. Un empate en
+el punto de corte lo decide el organizador con un fundamento obligatorio.
+Unicidad: **un voto por categoría y ronda en cada edición**.
+
+**Resultados:** el conteo por opción es público cuando la votación cierra.
+Mientras está abierta solo lo ven el organizador, el auditor y el
+administrador (`resultados.ver`); el público ve únicamente la participación
+en porcentaje de inscritos (en votaciones "solo inscritos").
+
+**Secreto del voto:** el voto no guarda quién votó, su hora se redondea a
+la hora, el comprobante del votante es un código aleatorio (no la firma del
+voto) y el registro de auditoría anota "voto emitido" sin identidad.
+
+**Fotos:** cada opción admite una foto (JPG, PNG o WEBP de hasta 2 MB) que
+se recorta cuadrada a 600 px en JPEG y se guarda en `media/` (en
+desarrollo la sirve Django; en producción, el servidor web).
 
 `votacion.PadronVotante` garantiza **un voto por usuario, categoría y edición**
 (único por `usuario` + `edicion` + `categoria`; el padrón guarda copias
@@ -257,6 +298,12 @@ Enforcement:
 | GET/POST | `/gestion/ediciones/<id>/cerrar/` | Cierre anticipado con motivo (ACTIVA → CERRANDO) |
 | POST | `/gestion/ediciones/<id>/escrutar/` | Generar actas de las votaciones CERRADAS |
 | POST | `/gestion/categorias/<id>/archivar/` | Archivar / reactivar categoría |
+| GET/POST | `/gestion/ediciones/<id>/inscritos/` | Inscritos de la edición y carga por documentos (`inscripciones.gestionar`) |
+| GET/POST | `/gestion/votaciones/<id>/ronda-siguiente/` | Configurar la ronda siguiente (edición en borrador) |
+| POST | `/gestion/votaciones/<id>/ronda/preparar/` | Ronda tras repetición: con candidatos nuevos → LISTA |
+| GET/POST | `/gestion/votaciones/<id>/empate/` | Resolver un empate en el punto de corte |
+| GET | `/gestion/votaciones/<id>/normativas/` | Normativas de la votación (se muestran en el tarjetón) |
+| POST | `/ediciones/<id>/inscribirme/` | El votante se inscribe a la edición |
 | GET | `/gestion/categorias/` | Gestión de categorías (`categorias.ver`) |
 | POST | `/gestion/categorias/nueva/` | Crear categoría (`categorias.crear`) |
 | POST | `/gestion/categorias/<id>/editar/` | Editar categoría (`categorias.editar`) |
