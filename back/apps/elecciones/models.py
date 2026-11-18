@@ -3,19 +3,54 @@ from django.utils import timezone
 
 
 class Edicion(models.Model):
-    """Agrupa un proceso electoral completo (por ejemplo, Festival 2027)."""
+    """Contenedor de un proceso electoral completo (por ejemplo, Festival 2027).
+
+    La edición manda sobre todo lo que contiene: tiene un periodo
+    (``fecha_inicio`` → ``fecha_fin``) y un ciclo de vida. Ninguna votación
+    se abre ni recibe votos por fuera del estado y las fechas de su edición,
+    y cuando la edición termina, todo lo de adentro termina con ella.
+
+    Ciclo de vida (las transiciones viven en ``elecciones.ciclo``):
+
+    - BORRADOR: se arma la estructura (categorías, votaciones, opciones).
+    - PROGRAMADA: validada y a la espera de su fecha de inicio.
+    - ACTIVA: automática al llegar ``fecha_inicio``; se vota.
+    - CERRANDO: automática al llegar ``fecha_fin`` o por cierre anticipado;
+      no entra ningún voto y se hace el escrutinio.
+    - FINALIZADA: automática cuando todas sus votaciones están escrutadas o
+      canceladas. Es definitiva: todo queda en solo lectura.
+    """
+
+    BORRADOR = 'BORRADOR'
+    PROGRAMADA = 'PROGRAMADA'
+    ACTIVA = 'ACTIVA'
+    CERRANDO = 'CERRANDO'
+    FINALIZADA = 'FINALIZADA'
 
     ESTADOS = [
-        ('BORRADOR', 'Borrador'),
-        ('PROGRAMADA', 'Programada'),
-        ('ACTIVA', 'Activa'),
-        ('CERRANDO', 'Cerrando'),
-        ('FINALIZADA', 'Finalizada'),
+        (BORRADOR, 'Borrador'),
+        (PROGRAMADA, 'Programada'),
+        (ACTIVA, 'Activa'),
+        (CERRANDO, 'En escrutinio'),
+        (FINALIZADA, 'Finalizada'),
     ]
 
     nombre = models.CharField(max_length=150)
     anio = models.PositiveIntegerField()
-    estado = models.CharField(max_length=20, choices=ESTADOS, default='BORRADOR')
+    estado = models.CharField(max_length=20, choices=ESTADOS, default=BORRADOR)
+    fecha_inicio = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Al llegar esta fecha una edición PROGRAMADA se activa sola.',
+    )
+    fecha_fin = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Al llegar esta fecha la edición se cierra sola.',
+    )
+    cierre_anticipado = models.BooleanField(default=False)
+    motivo_cierre = models.TextField(blank=True, default='')
+    fecha_cierre_real = models.DateTimeField(null=True, blank=True)
     creador = models.ForeignKey(
         'usuarios.Usuario',
         on_delete=models.PROTECT,
@@ -45,14 +80,65 @@ class Edicion(models.Model):
 
     @property
     def esta_activa(self):
-        return self.estado == 'ACTIVA'
+        return self.estado == self.ACTIVA
+
+    @property
+    def admite_cambios_de_estructura(self):
+        """Categorías, votaciones y opciones solo se agregan o quitan en BORRADOR."""
+        return self.estado == self.BORRADOR
+
+    @property
+    def es_solo_lectura(self):
+        return self.estado == self.FINALIZADA
+
+    @property
+    def no_lista(self):
+        """Llegó su fecha de inicio y sigue en BORRADOR: no se abrirá sola."""
+        return (
+            self.estado == self.BORRADOR
+            and self.fecha_inicio is not None
+            and self.fecha_inicio <= timezone.now()
+        )
+
+    @property
+    def en_periodo(self):
+        """La fecha actual está dentro del periodo de la edición."""
+        ahora = timezone.now()
+        if self.fecha_inicio and ahora < self.fecha_inicio:
+            return False
+        if self.fecha_fin and ahora >= self.fecha_fin:
+            return False
+        return True
+
+    @property
+    def recibe_votos(self):
+        """El cierre manda siempre: estado ACTIVA y dentro del periodo."""
+        return self.estado == self.ACTIVA and self.en_periodo
+
+    @property
+    def num_discrepancias_pendientes(self):
+        return self.discrepancias.filter(estado='ABIERTA').count()
+
+    @property
+    def finalizada_con_pendientes(self):
+        """Se finalizó con discrepancias sin resolver (no bloquean el cierre)."""
+        return self.estado == self.FINALIZADA and self.num_discrepancias_pendientes > 0
 
 
 class Categoria(models.Model):
-    """Temática reutilizable entre ediciones (Música, Deportes, etc.)."""
+    """Temática del catálogo global, reutilizable entre ediciones.
+
+    Una misma categoría (Música) puede estar en muchas ediciones; dentro de
+    una edición aparece una sola vez aunque tenga varias votaciones. Si ya
+    se usó en una edición finalizada no se borra ni se renombra: se archiva.
+    """
 
     nombre = models.CharField(max_length=150, unique=True)
     descripcion = models.TextField(blank=True, null=True)
+    archivada = models.BooleanField(
+        default=False,
+        help_text='Archivada: no se ofrece a ediciones nuevas, pero se conserva su historial.',
+    )
 
     class Meta:
         db_table = 'categorias'
@@ -63,14 +149,43 @@ class Categoria(models.Model):
     def __str__(self):
         return self.nombre
 
+    @property
+    def usada_en_edicion_finalizada(self):
+        return self.votaciones.filter(edicion__estado=Edicion.FINALIZADA).exists()
+
 
 class Votacion(models.Model):
     """Votación concreta de una categoría dentro de una edición.
 
     Ejemplo: Festival 2027 → Música → "Canción favorita del público".
+
+    Tiene su propio ciclo de vida, siempre subordinado al de su edición:
+
+    - BORRADOR: se está configurando.
+    - LISTA: validada al programar la edición; espera su fecha de apertura.
+    - ABIERTA: recibe votos (solo si la edición está ACTIVA).
+    - CERRADA: ya no recibe votos y espera su acta.
+    - ESCRUTADA: tiene su acta de escrutinio.
+    - CANCELADA: la edición se cerró y la votación nunca llegó a abrirse.
     """
 
-    ESTADOS = Edicion.ESTADOS
+    BORRADOR = 'BORRADOR'
+    LISTA = 'LISTA'
+    ABIERTA = 'ABIERTA'
+    CERRADA = 'CERRADA'
+    ESCRUTADA = 'ESCRUTADA'
+    CANCELADA = 'CANCELADA'
+
+    ESTADOS = [
+        (BORRADOR, 'Borrador'),
+        (LISTA, 'Lista'),
+        (ABIERTA, 'Abierta'),
+        (CERRADA, 'Cerrada'),
+        (ESCRUTADA, 'Escrutada'),
+        (CANCELADA, 'Cancelada'),
+    ]
+    # Estados de los que no se vuelve: no se reabren ni se editan.
+    ESTADOS_FINALES = (CERRADA, ESCRUTADA, CANCELADA)
 
     edicion = models.ForeignKey(Edicion, on_delete=models.CASCADE, related_name='votaciones')
     categoria = models.ForeignKey(Categoria, on_delete=models.PROTECT, related_name='votaciones')
@@ -78,7 +193,7 @@ class Votacion(models.Model):
     descripcion = models.TextField(blank=True, null=True)
     fecha_apertura = models.DateTimeField()
     fecha_cierre = models.DateTimeField()
-    estado = models.CharField(max_length=20, choices=ESTADOS, default='BORRADOR')
+    estado = models.CharField(max_length=20, choices=ESTADOS, default=BORRADOR)
     mostrar_resultados_en_vivo = models.BooleanField(default=False)
 
     class Meta:
@@ -102,11 +217,31 @@ class Votacion(models.Model):
 
     @property
     def esta_abierta(self):
+        """Recibe votos ahora mismo.
+
+        No basta el estado guardado: también se comprueban las fechas de la
+        votación y el estado y periodo de la edición, por si el cambio
+        automático todavía no se ha aplicado.
+        """
         ahora = timezone.now()
         return (
-            self.estado == 'ACTIVA'
+            self.estado == self.ABIERTA
             and self.fecha_apertura <= ahora <= self.fecha_cierre
+            and self.edicion.recibe_votos
         )
+
+    @property
+    def es_final(self):
+        return self.estado in self.ESTADOS_FINALES
+
+    @property
+    def tiene_resultado_final(self):
+        return self.estado in (self.CERRADA, self.ESCRUTADA)
+
+    @property
+    def num_opciones_validas(self):
+        """Opciones que cuentan para validar: el voto en blanco no cuenta."""
+        return self.opciones.filter(es_voto_blanco=False).count()
 
     @property
     def total_votos(self):
