@@ -58,14 +58,44 @@ paquete `back/`.
 
 | Nivel | Modelo | Campos clave |
 |---|---|---|
-| Edición | `elecciones.Edicion` | `nombre`, `anio`, `estado` (único por nombre+año) |
-| Categoría | `elecciones.Categoria` | `nombre` (catálogo global reutilizable) |
-| Votación | `elecciones.Votacion` | `edicion`, `categoria`, `nombre`, fechas, `estado` |
+| Edición | `elecciones.Edicion` | `nombre`, `anio`, `fecha_inicio`, `fecha_fin`, `estado` (único por nombre+año) |
+| Categoría | `elecciones.Categoria` | `nombre`, `archivada` (catálogo global reutilizable entre ediciones) |
+| Votación | `elecciones.Votacion` | `edicion`, `categoria`, `nombre`, fechas (dentro del periodo de la edición), `estado` |
 | Opción | `elecciones.Opcion` | `votacion`, `nombre`, `subtitulo`, `orden` (casilla única por votación) |
 | Voto | `votacion.Voto` | `opcion`, `fecha_registro`, `firma_criptografica` (SHA-256) |
 
 El voto apunta **solo a la opción**: la votación se deriva de ella, así que es
 imposible registrar un voto con una opción de otra votación.
+
+## Ciclo de vida (`elecciones/ciclo.py`)
+
+La edición es el contenedor: tiene un periodo y un ciclo de vida, y nada de
+lo que contiene se abre ni recibe votos por fuera de ellos. El estado nunca
+se edita a mano (ni en formularios, ni en la API, ni en el admin): solo
+cambia por las transiciones de `elecciones/ciclo.py`.
+
+| Edición | Cómo entra | Qué se permite |
+|---|---|---|
+| BORRADOR | Al crearse o al volver desde PROGRAMADA | Armar todo: categorías, votaciones, opciones, periodo |
+| PROGRAMADA | El organizador la programa y pasa la validación | Solo cambiar el nombre y textos |
+| ACTIVA | **Automático** en `fecha_inicio` | Votar en las votaciones abiertas |
+| CERRANDO (en escrutinio) | **Automático** en `fecha_fin` o cierre anticipado con motivo | Generar actas |
+| FINALIZADA | **Automático** cuando todo está ESCRUTADO o CANCELADO | Solo lectura |
+
+Votación: BORRADOR → LISTA (al programar la edición) → ABIERTA (en su fecha,
+solo con la edición ACTIVA) → CERRADA → ESCRUTADA (con su acta). Las que
+nunca se abrieron pasan a CANCELADA cuando la edición se cierra.
+
+Los cambios por fecha los aplica el middleware `SincronizarEstadosMiddleware`
+en cada petición y el comando `python manage.py sincronizar_estados` (para
+un cron). Además `Votacion.esta_abierta` revisa las fechas de la votación y
+de la edición, así que ningún voto entra fuera de tiempo.
+
+El auditor (`/auditoria/ediciones/`) ve verificaciones automáticas (padrón
+contra urna, firmas, votos fuera de horario, actas) y registra
+discrepancias; las resuelve el organizador con `discrepancias.resolver` o,
+si su rol no tiene ese permiso, el administrador. Una discrepancia abierta
+no bloquea la finalización.
 
 `votacion.PadronVotante` garantiza **un voto por usuario, categoría y edición**
 (único por `usuario` + `edicion` + `categoria`; el padrón guarda copias
@@ -222,8 +252,11 @@ Enforcement:
 | POST | `/gestion/ediciones/nueva/` | Crear edición (`ediciones.crear`) |
 | POST | `/gestion/ediciones/<id>/editar/` | Editar edición (`ediciones.editar`) |
 | POST | `/gestion/ediciones/<id>/eliminar/` | Eliminar con confirmación (`ediciones.eliminar`) |
-| POST | `/gestion/ediciones/<id>/publicar/` | Publicar (→ ACTIVA) |
-| POST | `/gestion/ediciones/<id>/finalizar/` | Finalizar (→ FINALIZADA, sin regreso) |
+| POST | `/gestion/ediciones/<id>/programar/` | Programar (BORRADOR → PROGRAMADA, con validación) |
+| POST | `/gestion/ediciones/<id>/desprogramar/` | Volver a borrador (PROGRAMADA → BORRADOR) |
+| GET/POST | `/gestion/ediciones/<id>/cerrar/` | Cierre anticipado con motivo (ACTIVA → CERRANDO) |
+| POST | `/gestion/ediciones/<id>/escrutar/` | Generar actas de las votaciones CERRADAS |
+| POST | `/gestion/categorias/<id>/archivar/` | Archivar / reactivar categoría |
 | GET | `/gestion/categorias/` | Gestión de categorías (`categorias.ver`) |
 | POST | `/gestion/categorias/nueva/` | Crear categoría (`categorias.crear`) |
 | POST | `/gestion/categorias/<id>/editar/` | Editar categoría (`categorias.editar`) |
@@ -231,8 +264,8 @@ Enforcement:
 | GET | `/gestion/votaciones/` | Gestión de votaciones, filtrable por edición y categoría (`votaciones.ver`) |
 | POST | `/gestion/votaciones/nueva/` | Crear votación (`votaciones.crear`) |
 | POST | `/gestion/votaciones/<id>/editar/` | Editar votación (`votaciones.editar`) |
-| POST | `/gestion/votaciones/<id>/abrir/` | Abrir (→ ACTIVA) |
-| POST | `/gestion/votaciones/<id>/cerrar/` | Cerrar (→ FINALIZADA; conserva votos) |
+| POST | `/gestion/votaciones/<id>/abrir/` | Abrir antes de su fecha (LISTA → ABIERTA, edición ACTIVA) |
+| POST | `/gestion/votaciones/<id>/cerrar/` | Cerrar (ABIERTA → CERRADA; conserva votos) |
 | GET | `/gestion/votaciones/<id>/opciones/` | Opciones de la votación por casilla (`opciones.ver`) |
 | POST | `/gestion/votaciones/<id>/opciones/nueva/` | Crear opción (`opciones.crear`) |
 | POST | `/gestion/votaciones/<id>/opciones/<oid>/editar/` | Editar opción (`opciones.editar`) |
@@ -328,7 +361,8 @@ ediciones, categorías, votaciones y opciones.
 
 Reglas del flujo de voto:
 
-1. La votación debe estar `ACTIVA` y dentro de sus fechas.
+1. La votación debe estar `ABIERTA` y dentro de sus fechas, y su edición
+   `ACTIVA` y dentro de su periodo.
 2. La opción debe pertenecer a esa votación.
 3. Cada usuario emite un solo voto por **categoría y edición** (aunque la
    categoría tenga varios subeventos).
