@@ -875,7 +875,9 @@ class GestionVotacionesTests(TestCase):
             'nombre': 'Canción favorita',
             'fecha_apertura': (self.ahora - self.delta).strftime('%Y-%m-%dT%H:%M'),
             'fecha_cierre': (self.ahora + self.delta).strftime('%Y-%m-%dT%H:%M'),
-            'estado': 'ACTIVA',
+            'modo_participacion': 'LIBRE',
+            'regla_resultado': 'MAYORIA_SIMPLE',
+            'clasifican': 2,
         }
 
     def _votacion(self, **extra):

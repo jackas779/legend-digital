@@ -601,11 +601,16 @@ class PermisosTests(TestCase):
     def test_catalogo_los_cuatro_roles(self):
         from back.apps.usuarios.models import RolPermiso
 
-        for nombre in ('Administrador', 'Organizador', 'Votante', 'Auditor'):
-            from back.apps.usuarios.models import Role
-
+        for nombre in ('Administrador', 'Organizador', 'Auditor'):
             rol = self.Role.objects.get(nombre=nombre)
             self.assertGreater(RolPermiso.objects.filter(rol=rol).count(), 0)
+
+        # El votante no tiene permisos del catálogo: vota y ve resultados al
+        # cierre, pero no resultados en vivo (podrían influir en el voto).
+        votante = self.Role.objects.get(nombre='Votante')
+        self.assertFalse(
+            RolPermiso.objects.filter(rol=votante, permiso__codigo='resultados.ver').exists()
+        )
 
     def test_tiene_permiso_por_rol(self):
         from back.apps.usuarios.permisos import tiene_permiso
@@ -618,8 +623,9 @@ class PermisosTests(TestCase):
         self.assertTrue(tiene_permiso(organizador, 'resultados.ver'))
         self.assertFalse(tiene_permiso(organizador, 'usuarios.crear'))
 
-        # El votante solo ve resultados: no puede escribir votaciones (P5).
+        # El votante no escribe votaciones (P5) ni ve resultados en vivo.
         self.assertFalse(tiene_permiso(votante, 'votaciones.crear'))
+        self.assertFalse(tiene_permiso(votante, 'resultados.ver'))
         self.assertTrue(tiene_permiso(admin, 'usuarios.crear'))
 
     def test_tiene_permiso_superusuario_y_sin_perfil(self):

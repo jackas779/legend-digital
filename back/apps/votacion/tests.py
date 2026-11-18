@@ -24,7 +24,6 @@ def crear_escenario():
         fecha_apertura=ahora - timedelta(hours=2),
         fecha_cierre=ahora + timedelta(days=1),
         estado='ABIERTA',
-        mostrar_resultados_en_vivo=True,
     )
     cancion_a = Opcion.objects.create(votacion=votacion, nombre='Canción A', subtitulo='Artista A', orden=1)
     cancion_b = Opcion.objects.create(votacion=votacion, nombre='Canción B', subtitulo='Artista B', orden=2)
@@ -134,13 +133,38 @@ class FlujoVotacionMVTTest(TestCase):
             {'opcion': self.cancion_a.pk},
         )
 
-        self.assertRedirects(respuesta, reverse('resultados', args=[self.votacion.pk]))
+        padron = PadronVotante.objects.get(usuario=self.user, votacion=self.votacion)
+        # Tras votar, el votante va a su comprobante (los resultados son al cierre).
+        self.assertRedirects(respuesta, reverse('comprobante', args=[padron.hash_comprobante]))
         self.assertEqual(Voto.objects.count(), 1)
         self.assertEqual(Voto.objects.first().opcion, self.cancion_a)
-
-        padron = PadronVotante.objects.get(usuario=self.user, votacion=self.votacion)
         self.assertTrue(padron.ha_votado)
         self.assertTrue(padron.hash_comprobante)
+
+    def test_el_comprobante_no_lleva_a_la_opcion(self):
+        """Secreto del voto: el comprobante no es la firma de ningún voto."""
+        self.client.force_login(self.user)
+        self.client.post(reverse('votar', args=[self.votacion.pk]), {'opcion': self.cancion_a.pk})
+
+        padron = PadronVotante.objects.get(usuario=self.user, votacion=self.votacion)
+        self.assertFalse(Voto.objects.filter(firma_criptografica=padron.hash_comprobante).exists())
+
+    def test_la_hora_del_voto_queda_redondeada(self):
+        self.client.force_login(self.user)
+        self.client.post(reverse('votar', args=[self.votacion.pk]), {'opcion': self.cancion_a.pk})
+
+        fecha = Voto.objects.get().fecha_registro
+        self.assertEqual((fecha.minute, fecha.second, fecha.microsecond), (0, 0, 0))
+
+    def test_el_registro_no_dice_quien_voto(self):
+        from back.apps.auditoria.models import LogAuditoriaEvento
+
+        self.client.force_login(self.user)
+        self.client.post(reverse('votar', args=[self.votacion.pk]), {'opcion': self.cancion_a.pk})
+
+        evento = LogAuditoriaEvento.objects.get(accion='voto_emitido')
+        self.assertIsNone(evento.usuario_id)
+        self.assertEqual(evento.ip_origen, '')
 
     def test_el_voto_queda_firmado(self):
         self.client.force_login(self.user)
@@ -173,7 +197,6 @@ class FlujoVotacionMVTTest(TestCase):
             fecha_apertura=ahora - timedelta(hours=2),
             fecha_cierre=ahora + timedelta(days=1),
             estado='ABIERTA',
-            mostrar_resultados_en_vivo=True,
         )
         artista_x = Opcion.objects.create(votacion=subevento_b, nombre='Artista X', orden=1)
 
@@ -184,7 +207,7 @@ class FlujoVotacionMVTTest(TestCase):
             reverse('votar', args=[subevento_b.pk]), {'opcion': artista_x.pk}
         )
 
-        self.assertRedirects(respuesta, reverse('resultados', args=[subevento_b.pk]))
+        self.assertRedirects(respuesta, reverse('tarjeton', args=[subevento_b.pk]))
         # Queda un solo voto: el primero (Canción A), no el del subevento B;
         # y un solo padrón habilitado al nivel usuario → categoría → edición.
         self.assertEqual(Voto.objects.count(), 1)
@@ -204,19 +227,11 @@ class FlujoVotacionMVTTest(TestCase):
             'Deportes',
             'Mejor equipo',
         )
-        otra_votacion.mostrar_resultados_en_vivo = True
-        otra_votacion.save(
-            update_fields=['mostrar_resultados_en_vivo'],
-        )
-
         self.client.force_login(self.user)
         self.client.post(reverse('votar', args=[self.votacion.pk]), {'opcion': self.cancion_a.pk})
 
-        respuesta = self.client.post(
-            reverse('votar', args=[otra_votacion.pk]), {'opcion': otra_opcion.pk}
-        )
+        self.client.post(reverse('votar', args=[otra_votacion.pk]), {'opcion': otra_opcion.pk})
 
-        self.assertRedirects(respuesta, reverse('resultados', args=[otra_votacion.pk]))
         votos = Voto.objects.count()
         self.assertEqual(votos, 2)
         padrones_habilitados = PadronVotante.objects.filter(usuario=self.user, ha_votado=True)
@@ -267,6 +282,9 @@ class FlujoVotacionMVTTest(TestCase):
             reverse('votar', args=[self.votacion.pk]),
             {'opcion': self.cancion_a.pk},
         )
+        # Al cierre los resultados son públicos.
+        self.votacion.estado = 'CERRADA'
+        self.votacion.save(update_fields=['estado'])
 
         respuesta = self.client.get(reverse('resultados', args=[self.votacion.pk]))
 
@@ -443,12 +461,10 @@ class ResultadosVisibilidadTests(TestCase):
 
         cache.clear()
         call_command('cargar_permisos', stdout=io.StringIO())
-        # R2: ABIERTA sin resultados en vivo.
+        # R2: el conteo de una votación ABIERTA no es público.
         self.edicion, self.categoria, self.votacion, self.cancion_a, self.cancion_b = (
             crear_escenario()
         )
-        self.votacion.mostrar_resultados_en_vivo = False
-        self.votacion.save(update_fields=['mostrar_resultados_en_vivo'])
 
         self.user_model = get_user_model()
         self.votante = self.user_model.objects.create_user(
@@ -476,12 +492,31 @@ class ResultadosVisibilidadTests(TestCase):
 
         self.assertRedirects(respuesta, reverse('tarjeton', args=[self.votacion.pk]))
 
-    def test_resultados_ver_los_ve_antes_del_cierre(self):
+    def test_el_votante_no_ve_conteos_antes_del_cierre(self):
+        """Ver cómo va cada opción podría influir en quien todavía no vota."""
         self.client.force_login(self.votante)
 
         respuesta = self.client.get(reverse('resultados', args=[self.votacion.pk]))
 
+        self.assertRedirects(respuesta, reverse('tarjeton', args=[self.votacion.pk]))
+
+    def test_el_equipo_interno_ve_en_vivo(self):
+        organizador = self.user_model.objects.create_user(username='org-res', password='x')
+        dar_rol(organizador, 'Organizador')
+        self.client.force_login(organizador)
+
+        respuesta = self.client.get(reverse('resultados', args=[self.votacion.pk]))
+
         self.assertEqual(respuesta.status_code, 200)
+
+    def test_la_api_no_entrega_conteos_en_vivo_al_publico(self):
+        Voto.objects.create(opcion=self.cancion_a)
+
+        respuesta = self.client.get(
+            reverse('votacion-opciones', kwargs={'votacion_id': self.votacion.id})
+        )
+
+        self.assertIsNone(respuesta.json()[0]['total_votos'])
 
     def test_cerrada_es_publica(self):
         self.votacion.estado = 'CERRADA'
@@ -493,7 +528,7 @@ class ResultadosVisibilidadTests(TestCase):
         self.assertEqual(respuesta.status_code, 200)
 
     def test_consolidado_por_edicion(self):
-        """R3: todas las votaciones de la edición; exige resultados.ver."""
+        """R3: todas las votaciones de la edición; el conteo abierto, solo al cierre."""
         votacion_extra = crear_votacion_extra(self.edicion, 'Letra inédita', 'Mejor letra')
         dar_rol(self.otro)
         self.client.force_login(self.otro)
@@ -508,7 +543,7 @@ class ResultadosVisibilidadTests(TestCase):
         )
         self.assertEqual(respuesta.status_code, 302)
 
-        # Votante (resultados.ver): ve el consolidado con las dos votaciones.
+        # Votante: ve las dos votaciones, pero sin conteo mientras están abiertas.
         self.client.force_login(self.votante)
         respuesta = self.client.get(
             reverse('resultados_consolidado', args=[self.edicion.pk])
@@ -516,6 +551,14 @@ class ResultadosVisibilidadTests(TestCase):
         self.assertEqual(respuesta.status_code, 200)
         self.assertContains(respuesta, 'Canción favorita del público')
         self.assertContains(respuesta, 'Mejor letra')
+        self.assertEqual(respuesta.context['total_edicion'], 0)
+
+        # Al cerrar, el conteo se publica.
+        self.votacion.estado = 'CERRADA'
+        self.votacion.save(update_fields=['estado'])
+        respuesta = self.client.get(
+            reverse('resultados_consolidado', args=[self.edicion.pk])
+        )
         self.assertEqual(respuesta.context['total_edicion'], 1)
         del votacion_extra
 
