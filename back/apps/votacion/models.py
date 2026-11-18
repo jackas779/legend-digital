@@ -68,7 +68,8 @@ class PadronVotante(models.Model):
     )
     ha_votado = models.BooleanField(default=False)
     fecha_emision = models.DateTimeField(auto_now_add=True)
-    hash_comprobante = models.CharField(max_length=256, unique=True, null=True, blank=True)
+    # nuevo_comprobante(): token_hex(32) = 64 caracteres.
+    hash_comprobante = models.CharField(max_length=64, unique=True, null=True, blank=True)
 
     class Meta:
         db_table = 'padron_votantes'
