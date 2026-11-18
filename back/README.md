@@ -11,44 +11,44 @@ Festival 2027 → Música → Canción favorita del público → Canción A / B 
 
 ## Stack
 
-- Python 3.12
+- Python 3.12+ (probado en 3.14)
 - Django 6.1.2 (ver `back/requirements.txt`)
-- SQLite (desarrollo)
+- MySQL 8 con PyMySQL, o SQLite si no hay `DB_PASSWORD`
+- Pillow (fotos de candidatos)
 - Django Templates (MVT) + Django Admin
-- Django REST Framework + JWT (API existente, en segundo plano)
+- Django REST Framework + JWT (API, en segundo plano)
 
 ## Estructura
 
 ```text
-proyecto universidad/
+legend-digital/
+├── manage.py
+├── .env                        # variables de entorno (en la raíz, no en back/)
 ├── preparar_windows.bat        # instalación en una máquina nueva (Windows)
 ├── preparar_linux.sh           # instalación en una máquina nueva (Linux/macOS)
+├── media/                      # fotos subidas (fuera de git)
 ├── front/                      # prototipo Vue (referencia de credenciales)
 └── back/
-    ├── manage.py
+    ├── __init__.py             # registra PyMySQL como conector de MySQL
     ├── requirements.txt        # dependencias congeladas
-    ├── modelo_datos.sql
-    ├── settings.py             # apps, plantillas, JWT, CORS, i18n
-    ├── urls.py                 # router raíz: MVT, API y admin
-    ├── wsgi.py / asgi.py
-    ├── .env.example            # variables de entorno
+    ├── settings.py             # apps, plantillas, JWT, CORS, i18n, media
+    ├── urls.py                 # router raíz: MVT, API, admin y media
     ├── templates/
-    │   ├── base.html
-    │   ├── gestion/            # gestione MVT de ediciones/categorías/votaciones/opciones
-    │   ├── registration/
-    │   ├── usuarios/           # registro y cambio de contraseña
-    │   └── votacion/
-    │       ├── inicio.html
-    │       ├── edicion.html
-    │       ├── tarjeton.html
-    │       ├── resultados*
-    │       ├── comprobante.html
-    │       └── mis_votos.html
+    │   ├── base.html, 403.html
+    │   ├── gestion/            # ediciones, categorías, votaciones, opciones,
+    │   │                       # rondas, empates, inscritos y normativas
+    │   ├── auditoria/          # registro, verificación y discrepancias
+    │   ├── registration/, usuarios/
+    │   └── votacion/           # inicio, edición, tarjetón, resultados, comprobante
     └── apps/
-        ├── usuarios/           # roles, permisos, perfil, auth, sesión
-        ├── elecciones/         # Edición, Categoría, Votación, Opción + gestión MVT
-        ├── votacion/           # Padrón, Voto, certificados, acta
-        └── auditoria/          # logs de eventos
+        ├── usuarios/           # roles, permisos (sincronizados en migrate), auth, sesión
+        ├── elecciones/         # Edición, Categoría, Votación, Opción
+        │   ├── ciclo.py        # ciclo de vida, rondas y resultados (única puerta de estados)
+        │   ├── imagenes.py     # validación y recorte de fotos
+        │   └── middleware.py   # cambios de estado por fecha en cada petición
+        ├── votacion/           # Padrón, Voto, Inscripción, Acta
+        │   └── inscripciones.py
+        └── auditoria/          # registro encadenado, verificación y discrepancias
 ```
 
 Las apps se importan como `back.apps.<app>` porque `apps/` vive dentro del
@@ -152,17 +152,19 @@ Desde la raíz del repositorio:
 ```bash
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r back\requirements.txt
 ```
 
-Copia las variables de entorno (opcional en desarrollo):
+Copia las variables de entorno **a la raíz** (es donde las lee
+`settings.py`):
 
 ```bash
-copy back\.env.example .env
+copy .env.example .env
 ```
 
-Variables soportadas: `DJANGO_SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS`.
-La base de datos es SQLite (`db.sqlite3`) y no requiere configuración.
+Variables soportadas: `DJANGO_SECRET_KEY`, `DEBUG`, `ALLOWED_HOSTS` y las de
+base de datos (`DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`).
+Sin `DB_PASSWORD` se usa SQLite (`db.sqlite3`); con ella, MySQL.
 
 ## Puesta en marcha en una máquina nueva
 
@@ -217,7 +219,6 @@ automáticamente (ver `back/settings.py`).
 docker compose up -d
 ```
 
-4. Si usas el contenedor: `docker compose up -d`
 5. Crea las tablas y carga datos demo en MySQL:
 
 ```bash
@@ -238,9 +239,9 @@ de secciones para las que no tiene permiso.
 | Rol | Menú |
 |---|---|
 | Votante | Inicio · Resultados · Mis votos · Mi cuenta |
-| Organizador | Ediciones · Categorías · Votaciones · Resultados · Mi cuenta |
-| Auditor | Resultados · Auditoría · Mi cuenta |
-| Administrador | Panel admin · Ediciones · Categorías · Votaciones · Resultados · Auditoría · Mi cuenta |
+| Organizador | Ediciones · Categorías · Votaciones · Resultados · Discrepancias · Mi cuenta |
+| Auditor | Verificación · Discrepancias · Resultados · Registro · Mi cuenta |
+| Administrador | Panel admin · Ediciones · Categorías · Votaciones · Resultados · Discrepancias · Auditoría · Mi cuenta |
 
 Anónimo solo ve **Ingresar** y **Registrarse**.
 
@@ -248,15 +249,28 @@ Anónimo solo ve **Ingresar** y **Registrarse**.
 
 La autorización usa los modelos `Role` / `Permission` / `RolPermiso` propios
 (no los grupos de Django). Los códigos siguen el formato `modulo.accion`
-(`ediciones.crear`, `votaciones.eliminar`, …) más `resultados.ver` y
-`padron.ver`; el catálogo completo queda visible en el admin.
+(`ediciones.crear`, `votaciones.eliminar`, …) más códigos especiales; el
+catálogo completo queda visible en el admin.
+
+| Código | Qué permite |
+|---|---|
+| `resultados.ver` | Ver resultados **en vivo** (antes del cierre) |
+| `padron.ver` | Consultar el padrón |
+| `auditoria.ver` | Ver el registro de auditoría |
+| `inscripciones.gestionar` | Inscribir votantes a una edición por lista |
+| `discrepancias.ver` / `.reportar` / `.resolver` | Ver, registrar/verificar y resolver discrepancias |
 
 | Rol | Permisos |
 |---|---|
 | Administrador | Todos |
-| Organizador | CRUD de ediciones, categorías, votaciones y opciones; `resultados.ver`, `padron.ver` |
-| Votante | `resultados.ver` |
-| Auditor | `resultados.ver`, `padron.ver`, `auditoria.ver` |
+| Organizador | CRUD de ediciones, categorías, votaciones y opciones; `resultados.ver`, `padron.ver`, `inscripciones.gestionar`, `discrepancias.ver`, `discrepancias.resolver` |
+| Votante | Ninguno: vota y ve resultados al cierre |
+| Auditor | `resultados.ver`, `padron.ver`, `auditoria.ver`, `discrepancias.ver`, `discrepancias.reportar` |
+
+`migrate` sincroniza el catálogo: los permisos nuevos del código llegan
+solos a los roles existentes (solo agrega, nunca quita lo que el
+administrador haya ajustado). `cargar_permisos` hace lo mismo y además
+crea los roles que falten.
 
 Enforcement:
 
@@ -269,7 +283,9 @@ Enforcement:
 - **Gestión MVT** (`/gestion/…`): cada vista exige su permiso con el
   decorador `@requiere_permiso(codigo)` del módulo
   `back/apps/usuarios/permisos.py`; anónimo va al login, sin permiso recibe
-  403.
+  una página 403 que dice qué permiso falta.
+- **API de usuarios**: listar roles y permisos exige sesión; crearlos exige
+  `usuarios.crear` (administrador).
 
 ## Rutas MVT
 
@@ -279,11 +295,13 @@ Enforcement:
 | GET | `/ediciones/<id>/` | Categorías y votaciones de la edición |
 | GET | `/votaciones/<id>/` | Tarjetón |
 | POST | `/votaciones/<id>/votar/` | Registrar voto (**solo rol Votante**) |
-| GET | `/votaciones/<id>/resultados/` | Conteo y porcentajes (según visibilidad R2) |
+| GET | `/votaciones/<id>/resultados/` | Conteo y porcentajes: público al cierre; antes, solo `resultados.ver` |
 | GET | `/comprobante/<hash>/` | Comprobante de voto; sin la opción, solo el dueño |
 | GET | `/mis-votos/` | Historial del votante con sus comprobantes |
-| GET | `/resultados/` | Índice de ediciones con resultados (`resultados.ver`) |
-| GET | `/resultados/edicion/<id>/` | Consolidado por edición (`resultados.ver`) |
+| GET | `/resultados/` | Índice de ediciones (requiere sesión) |
+| GET | `/resultados/edicion/<id>/` | Consolidado por edición; conteos de votaciones abiertas solo con `resultados.ver` |
+| GET | `/auditoria/ediciones/` | Verificación por edición (`discrepancias.ver`) |
+| GET | `/auditoria/discrepancias/` | Bandeja de discrepancias (`discrepancias.ver`) |
 | GET | `/accounts/login/` | Inicio de sesión (correo, usuario o documento) |
 | POST | `/accounts/logout/` | Cierre de sesión (por POST, con CSRF) |
 | GET | `/registro/` | Crear cuenta de votante |
@@ -335,11 +353,16 @@ restablecen con `--reset-passwords`.
 | Votante | Sofía Márquez | `1015987412` | sofia.marquez@uni.edu.co | `voto123` |
 | Votante suspendido | Julián Ospina | `1023654789` | julian.ospina@uni.edu.co | `voto123` |
 
-Además, `simular_votacion` (incluido en `preparar`) crea **40 votantes de
-demo** con documentos `90XXXXXXXX` y clave `voto123`, y les emite votos
-hasta una participación del 80 %, repartidos de forma realista entre las
-opciones (≈45 % / 33 % / 22 %). Así el padrón muestra habilitados y
-pendientes, y resultados y auditoría traen datos desde el arranque.
+Además, `simular_votacion` (incluido en `preparar`) crea **120 votantes de
+demo** con documentos `90XXXXXXXX` y clave `voto123`, y les emite votos en
+todas las votaciones abiertas (y en las cerradas pendientes de escrutinio,
+fechados dentro de su horario), respetando un voto por categoría y ronda.
+En votaciones "solo inscritos" los inscribe antes de la apertura.
+
+Escenario de demo (`cargar_leyenda`, en una base nueva): Festival de la
+Leyenda Vallenata 2026 activo, 2025 finalizado (con actas) y 2027
+programado con una **preselección libre** donde clasifican 2 y una **gran
+final solo para inscritos**.
 
 ## Registro de auditoría (logs)
 
@@ -348,14 +371,17 @@ Cada acción relevante queda en la tabla de auditoría
 la pantalla web **/auditoria/** (rol Auditor o Administrador). Cada fila
 guarda:
 
-- **Quién**: usuario de la acción (o `sistema` para eventos automáticos).
+- **Quién**: usuario de la acción (o `sistema` para eventos automáticos,
+  como los cambios de estado por fecha). El voto emitido se registra **sin
+  usuario ni IP**.
 - **Qué**: módulo y acción (`usuarios/login`, `usuarios/login_fallido`,
-  `usuarios/registro`, `votacion/voto_emitido`, `votos_simulados`, y
-  `creada/actualizada/eliminada/publicada/finalizada/abierta/cerrada` para
-  cada módulo de gestión).
+  `votacion/voto_emitido`, `edicion_programada`, `edicion_activada`,
+  `edicion_cerrada(_anticipadamente)`, `votacion_escrutada`,
+  `resultado_aplicado`, `inscripcion`, `discrepancia_*`, y
+  `creada/actualizada/eliminada` en cada módulo de gestión).
 - **Detalles**: por ejemplo la votación donde se emitió el voto. El
   secreto del voto se respeta: el evento **nunca** incluye la opción
-  elegida.
+  elegida ni quién votó.
 - **IP** de origen y fecha/hora.
 - **Hash de trazabilidad**: SHA-256 que encadena cada evento con el anterior
   (el primero de la tabla arranca con `GENESIS`). Si alguien altera o
@@ -369,7 +395,9 @@ Qué debe ver cada rol al entrar:
 - **Administrador**: todo el panel y la gestión completa.
 - **Organizador**: gestiona ediciones, categorías, votaciones y opciones.
 - **Votante**: el proceso electoral, sus comprobantes y el tarjetón.
-- **Auditor**: solo lectura de resultados y padrón; **no emite voto**.
+- **Auditor**: verifica el proceso y la urna (resultados en vivo,
+  verificaciones, discrepancias); en el registro no ve la actividad de
+  cada votante; **no emite voto**.
 
 Regla electoral: solo el rol **Votante** emite voto. Las autoridades del
 proceso (Administrador, Organizador y Auditor) conservan la consulta de
@@ -410,10 +438,13 @@ Reglas del flujo de voto:
 
 1. La votación debe estar `ABIERTA` y dentro de sus fechas, y su edición
    `ACTIVA` y dentro de su periodo.
-2. La opción debe pertenecer a esa votación.
-3. Cada usuario emite un solo voto por **categoría y edición** (aunque la
-   categoría tenga varios subeventos).
-4. El voto se guarda de forma anónima y se firma con SHA-256.
+2. Si la votación es "solo inscritos", el votante debe haberse inscrito a
+   la edición antes de su apertura.
+3. La opción debe pertenecer a esa votación.
+4. Cada usuario emite un solo voto por **categoría y ronda en cada
+   edición** (aunque la categoría tenga varios subeventos paralelos).
+5. El voto se guarda de forma anónima, con la hora redondeada, y se firma
+   con SHA-256; el votante recibe un comprobante aleatorio.
 
 ## API REST (existente)
 
@@ -432,31 +463,41 @@ La autenticación de la API es JWT; las vistas MVT usan sesión de Django.
 ## Pruebas
 
 ```bash
-python manage.py test
+python manage.py test back                                   # todo (~3 min en MySQL)
+python manage.py test back.apps.elecciones.tests_rondas     # un módulo
 ```
 
-Cubren creación de ediciones/votaciones/opciones, tarjetón, registro de voto,
-voto duplicado, opción de otra votación, votación cerrada y fuera de rango,
-resultados, autenticación (correo/usuario/documento, suspendidos, bloqueo por
-intentos, throttling 429, sesión con "recordarme", logout por POST), registro
-y cambio de contraseña, gestión de cuentas, permisos (catálogo idempotente,
-helper por rol, 403 del votante en escrituras, panel por rol), gestión MVT
-completa (ediciones, categorías, votaciones, opciones, con duplicados y
-bloqueos legibles), comprobante que no revela la opción, historial del
-votante, destino por rol al iniciar sesión, visibilidad de resultados y
-consolidado por edición.
+Crean y borran su propia base de pruebas. Cubren, además de autenticación,
+permisos y gestión MVT: ciclo de vida y cambios por fecha
+(`elecciones/tests_ciclo.py`), rondas, empates, repetición por voto en
+blanco y fotos (`elecciones/tests_rondas.py`), inscripciones y modos de
+participación (`votacion/tests_inscripciones.py`), secreto del voto
+(comprobante, hora redondeada, registro sin identidad), visibilidad de
+resultados en web y API, y verificación y discrepancias del auditor
+(`auditoria/tests.py`).
 
 ## Migraciones
 
-Las migraciones están versionadas y `db.sqlite3` está en `.gitignore`, así que
-un clon limpio se levanta con `python manage.py migrate`.
+Las migraciones están versionadas, así que un clon limpio se levanta con
+`python manage.py migrate` (que además sincroniza los permisos).
 
 - `elecciones/0004_modelo_mvp.py`: añade `Votacion.nombre`, convierte `Opcion`
   en tabla hija de `Votacion` y elimina la tabla puente `OpcionVotacion`.
 - `votacion/0004_urna_simplificada.py`: reemplaza `VotoUrna` por `Voto` y
   apunta `PadronVotante` a `auth.User`.
+- `elecciones/0005_ciclo_de_vida_edicion.py`: periodo de la edición y
+  estados propios de la votación (traslada los datos existentes).
+- `elecciones/0006_rondas_reglas_y_fotos.py`: modo de participación, regla
+  de resultado, rondas y foto de la opción.
+- `votacion/0006`–`0009`: padrón con edición, categoría y ronda
+  obligatorias, inscripciones, y **secreto del voto sobre los datos
+  existentes** (comprobantes nuevos, horas redondeadas, sellos de acta
+  recalculados; es irreversible a propósito).
+- `usuarios/0003_votante_sin_resultados_en_vivo.py`: quita `resultados.ver`
+  al votante en bases existentes.
 
 ## Fuera de alcance del MVP
 
-Certificados QR, actas de escrutinio y normativas ya tienen modelo y panel,
-pero su lógica de negocio queda para las siguientes fases.
+- Certificados con QR: el modelo existe pero no se generan.
+- El acta de escrutinio se genera con totales y sello, pero sin PDF.
+- Un solo voto por persona y votación: no hay voto múltiple ni preferencial.
