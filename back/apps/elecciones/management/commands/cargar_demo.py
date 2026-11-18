@@ -60,15 +60,24 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         ahora = timezone.now()
+        fin = ahora + timedelta(days=30)
 
         edicion, creada = Edicion.objects.get_or_create(
             nombre='Festival 2027',
             anio=2027,
-            defaults={'estado': 'ACTIVA'},
+            defaults={
+                'estado': Edicion.ACTIVA,
+                'fecha_inicio': ahora - timedelta(hours=2),
+                'fecha_fin': fin,
+            },
         )
-        if not creada and edicion.estado != 'ACTIVA':
-            edicion.estado = 'ACTIVA'
-            edicion.save(update_fields=['estado'])
+        if not creada:
+            # Su estado lo lleva el ciclo de vida (pudo cerrarse sola al
+            # llegar su fecha de fin); la semilla no lo revive.
+            self.stdout.write(
+                f'Listo: {edicion} ya existía ({edicion.get_estado_display()}).'
+            )
+            return
 
         categorias = {}
         for nombre, descripcion in CATEGORIAS.items():
@@ -85,8 +94,8 @@ class Command(BaseCommand):
                 defaults={
                     'descripcion': datos['descripcion'],
                     'fecha_apertura': ahora - timedelta(hours=1),
-                    'fecha_cierre': ahora + timedelta(days=30),
-                    'estado': 'ACTIVA',
+                    'fecha_cierre': fin,
+                    'estado': Votacion.ABIERTA,
                     'mostrar_resultados_en_vivo': True,
                 },
             )
