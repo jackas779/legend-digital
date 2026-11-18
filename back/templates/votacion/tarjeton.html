@@ -6,17 +6,44 @@
   <div class="tarjeton">
     <p class="crumbs"><a href="{% url 'edicion-detalle' votacion.edicion.pk %}">← {{ votacion.edicion }}</a></p>
 
-    <h1>{{ votacion.nombre }}</h1>
+    <h1>{% if votacion.numero_ronda > 1 %}<span class="meta">Ronda {{ votacion.numero_ronda }} ·</span> {% endif %}{{ votacion.nombre }}</h1>
     <p class="lead">
-      {{ votacion.categoria }}{% if votacion.esta_abierta %} · cierra el {{ votacion.fecha_cierre|date:"j b, H:i" }}{% endif %}
+      {{ votacion.categoria }}
+      {% if votacion.solo_inscritos %}<span class="chip">Solo inscritos</span>{% endif %}
+      {% if votacion.esta_abierta %}
+        · <span class="cuenta-regresiva" data-hasta="{{ votacion.fecha_cierre|date:'c' }}" data-prefijo="Cierra en" data-final="Cerrada">cierra el {{ votacion.fecha_cierre|date:"j b, H:i" }}</span>
+      {% elif votacion.estado == 'LISTA' %}
+        · <span class="cuenta-regresiva" data-hasta="{{ votacion.fecha_apertura|date:'c' }}" data-prefijo="Abre en" data-final="Abriendo…">abre el {{ votacion.fecha_apertura|date:"j b, H:i" }}</span>
+      {% endif %}
       {% if votacion.descripcion %}<br>{{ votacion.descripcion }}{% endif %}
     </p>
+
+    {% if participacion and votacion.esta_abierta %}
+      <div class="progreso participacion">
+        <div class="texto"><span>Participación</span><span>{{ participacion.porcentaje }} % de los inscritos</span></div>
+        <div class="pista" role="img" aria-label="Ha votado el {{ participacion.porcentaje }} % de los inscritos">
+          <span style="width:{{ participacion.porcentaje }}%"></span>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if normativas %}
+      <section class="normativas" aria-label="Normativas de la votación">
+        {% for normativa in normativas %}
+          <details>
+            <summary>{{ normativa.titulo }}</summary>
+            {% if normativa.contenido_html %}<p class="texto">{{ normativa.contenido_html|striptags }}</p>{% endif %}
+            {% if normativa.archivo_pdf_url %}<p><a href="{{ normativa.archivo_pdf_url }}" target="_blank" rel="noopener">Ver documento (PDF)</a></p>{% endif %}
+          </details>
+        {% endfor %}
+      </section>
+    {% endif %}
 
     {% if ya_voto %}
       <p class="msg success">Ya registraste tu voto en esta votación.</p>
       <p class="enlaces-pie">
         <a class="button" href="{% url 'mis_votos' %}">Ver mis comprobantes</a>
-        <a class="button ghost" href="{% url 'resultados' votacion.pk %}">Ver resultados</a>
+        {% if resultados_visibles %}<a class="button ghost" href="{% url 'resultados' votacion.pk %}">Ver resultados</a>{% endif %}
       </p>
     {% elif not votacion.esta_abierta %}
       <p class="msg warning">Esta votación no está abierta en este momento.</p>
@@ -31,6 +58,12 @@
         solo los votantes emiten voto. Puedes consultar los
         <a href="{% url 'resultados' votacion.pk %}">resultados</a>.
       </p>
+    {% elif not elegible %}
+      <p class="msg warning">
+        Esta votación es <strong>solo para inscritos</strong> y no te inscribiste a la edición
+        antes de que abriera ({{ votacion.fecha_apertura|date:"j b, H:i" }}). Puedes ver las
+        opciones, pero no votar.
+      </p>
     {% else %}
       <ol class="pasos" aria-label="Pasos para votar">
         <li class="actual" aria-current="step"><b>1</b> Elige</li>
@@ -39,15 +72,21 @@
       </ol>
 
       <p class="regla">Tu voto es <strong>secreto y definitivo</strong>: no se puede cambiar
-        y usa tu único voto de <strong>{{ votacion.categoria }}</strong>.</p>
+        y usa tu único voto de <strong>{{ votacion.categoria }}</strong>{% if votacion.numero_ronda > 1 %} en esta ronda{% endif %}.</p>
+    {% endif %}
 
+    {% if not ya_voto %}
       <form method="post" action="{% url 'votar' votacion.pk %}" id="form-voto">
         {% csrf_token %}
+        {% with puede=votacion.esta_abierta %}
         {% for opcion in opciones %}
           <label class="option{% if opcion.es_voto_blanco %} blanco{% endif %}">
-            <input type="radio" name="opcion" value="{{ opcion.pk }}" data-nombre="{{ opcion.nombre }}" required>
-            <span class="num" aria-hidden="true">{{ opcion.orden }}</span>
+            {% if puede and rol_votante and elegible %}
+              <input type="radio" name="opcion" value="{{ opcion.pk }}" data-nombre="{{ opcion.nombre }}" data-foto="{% if opcion.foto %}{{ opcion.foto.url }}{% endif %}" data-iniciales="{{ opcion.iniciales }}" required>
+            {% endif %}
+            {% include 'votacion/_foto.html' with opcion=opcion %}
             <span class="textos">
+              <span class="num-chico">Casilla {{ opcion.orden }}</span>
               <strong>{{ opcion.nombre }}</strong>
               {% if opcion.subtitulo %}
                 <span class="sub">{{ opcion.subtitulo }}</span>
@@ -57,21 +96,25 @@
             </span>
           </label>
         {% empty %}
-          <p class="empty">Esta votación no tiene opciones cargadas.</p>
+          <p class="empty">Esta votación todavía no tiene candidatos.</p>
         {% endfor %}
 
-        {% if opciones %}
+        {% if opciones and puede and rol_votante and elegible and user.is_authenticated %}
           <div class="barra-voto">
             <span id="resumen-voto" aria-live="polite">Selecciona una opción para continuar</span>
             <button type="submit">Registrar voto</button>
           </div>
         {% endif %}
+        {% endwith %}
       </form>
 
       <dialog id="confirmar-voto" aria-labelledby="titulo-confirmar">
         <h2 id="titulo-confirmar">¿Confirmas tu voto?</h2>
         <p>Vas a votar por:</p>
-        <p class="eleccion" id="eleccion-voto"></p>
+        <div class="eleccion-dialogo">
+          <span id="foto-voto"></span>
+          <p class="eleccion" id="eleccion-voto"></p>
+        </div>
         <p class="meta">Después de confirmar no podrás cambiarlo.</p>
         <div class="dialogo-botones">
           <button type="button" class="ghost" id="cancelar-voto">Volver</button>
@@ -86,6 +129,7 @@
           const dialogo = document.getElementById('confirmar-voto');
           const resumen = document.getElementById('resumen-voto');
           const eleccion = document.getElementById('eleccion-voto');
+          const fotoVoto = document.getElementById('foto-voto');
           const aceptar = document.getElementById('aceptar-voto');
           if (!form || !form.querySelector('[type="submit"]')) return;
           let confirmado = false;
@@ -100,7 +144,21 @@
           form.addEventListener('submit', function (evento) {
             if (confirmado || typeof dialogo.showModal !== 'function') return;
             evento.preventDefault();
-            eleccion.textContent = form.querySelector('input[name="opcion"]:checked').dataset.nombre;
+            const elegida = form.querySelector('input[name="opcion"]:checked');
+            eleccion.textContent = elegida.dataset.nombre;
+            fotoVoto.replaceChildren();
+            if (elegida.dataset.foto) {
+              const img = document.createElement('img');
+              img.className = 'foto-opcion grande';
+              img.src = elegida.dataset.foto;
+              img.alt = '';
+              fotoVoto.appendChild(img);
+            } else {
+              const marca = document.createElement('span');
+              marca.className = 'foto-opcion grande';
+              marca.textContent = elegida.dataset.iniciales;
+              fotoVoto.appendChild(marca);
+            }
             dialogo.showModal();
           });
 
@@ -116,10 +174,10 @@
           });
         })();
       </script>
-    {% endif %}
 
-    {% if not ya_voto %}
-      <p class="enlaces-pie"><a href="{% url 'resultados' votacion.pk %}">Ver resultados</a></p>
+      <p class="enlaces-pie">
+        {% if resultados_visibles %}<a href="{% url 'resultados' votacion.pk %}">Ver resultados</a>{% else %}<span class="meta">Los resultados se publican al cierre de la votación.</span>{% endif %}
+      </p>
     {% endif %}
   </div>
 {% endblock %}

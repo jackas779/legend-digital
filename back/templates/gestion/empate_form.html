@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block title %}Resolver empate — {{ votacion.nombre }}{% endblock %}
+
+{% block content %}
+  <p class="crumbs"><a href="{% url 'gestion:edicion_gestionar' votacion.edicion_id %}">← {{ votacion.edicion }}</a></p>
+  <div class="panel-form">
+    <h1>Resolver empate</h1>
+    <p class="lead">{{ votacion.nombre }} · {{ detalle }}</p>
+    <p>El sistema no decide un empate en el punto de corte. Elige
+      {% if necesarias == 1 %}quién gana{% else %}los {{ necesarias }} que pasan a la siguiente ronda{% endif %}
+      y deja el fundamento: queda en la votación y en la auditoría.</p>
+
+    <div class="tabla-scroll"><table>
+      <thead><tr><th>Opción</th><th>Votos</th></tr></thead>
+      <tbody>
+        {% for opcion in conteo %}
+          <tr><td>{{ opcion.nombre }}</td><td>{{ opcion.total }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+
+    {% url 'gestion:edicion_gestionar' votacion.edicion_id as cancelar %}
+    {% include 'gestion/_formulario.html' %}
+  </div>
+{% endblock %}

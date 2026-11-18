@@ -7,6 +7,14 @@
 
   <p class="crumbs"><a href="{% url 'gestion:ediciones' %}">← Ediciones</a></p>
 
+  <ol class="pasos-ciclo" aria-label="Ciclo de vida de la edición">
+    {% for paso in pasos %}
+      <li class="{{ paso.estado }}"{% if paso.estado == 'actual' %} aria-current="step"{% endif %}>
+        <b>{{ forloop.counter }}</b> {{ paso.nombre }}
+      </li>
+    {% endfor %}
+  </ol>
+
   <header class="panel-edicion">
     <div class="panel-edicion-texto">
       <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
@@ -24,6 +32,7 @@
         <div><b class="cifra">{{ num_categorias }}</b><span>categoría{{ num_categorias|pluralize }}</span></div>
         <div><b class="cifra">{{ votaciones|length }}</b><span>votaci{{ votaciones|length|pluralize:"ón,ones" }}</span></div>
         <div><b class="cifra">{{ total_votos }}</b><span>voto{{ total_votos|pluralize }}</span></div>
+        <div><b class="cifra">{{ num_inscritos }}</b><span>inscrito{{ num_inscritos|pluralize }}</span></div>
       </div>
     </div>
     <div class="acciones panel-edicion-acciones">
@@ -51,6 +60,7 @@
           </form>
         {% endif %}
       {% endif %}
+      <a class="button ghost mini" href="{% url 'gestion:inscritos' edicion.id %}">Inscritos{% if usa_inscripcion %} ({{ num_inscritos }}){% endif %}</a>
       <a class="button ghost mini" href="{% url 'edicion-detalle' edicion.id %}">Ver como votante</a>
     </div>
   </header>
@@ -99,21 +109,61 @@
 
           <div class="lista-votaciones">
             {% for votacion in grupo.list %}
-              <article class="card tarjeta">
+              <article class="card tarjeta{% if votacion.es_ronda_derivada %} ronda-derivada{% endif %}">
                 <div class="tarjeta-titulo">
-                  <strong>{{ votacion.nombre }}</strong>
+                  <strong>{% if votacion.numero_ronda > 1 %}<span class="meta">Ronda {{ votacion.numero_ronda }} ·</span> {% endif %}{{ votacion.nombre }}</strong>
                   <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
+                </div>
+                <div class="etiquetas">
+                  <span class="chip">{% if votacion.solo_inscritos %}Solo inscritos{% else %}Libre{% endif %}</span>
+                  <span class="chip">{% if votacion.regla_resultado == 'MAYORIA_ABSOLUTA' %}50 % + 1{% elif votacion.regla_resultado == 'CLASIFICAN_N' %}Clasifican {{ votacion.clasifican }}{% else %}Mayoría simple{% endif %}</span>
+                  {% if votacion.repetir_si_gana_blanco %}<span class="chip">Se repite si gana el blanco</span>{% endif %}
                 </div>
                 <div class="meta">{{ votacion.fecha_apertura|date:"j b Y, H:i" }} → {{ votacion.fecha_cierre|date:"j b Y, H:i" }}</div>
                 <div class="meta">
                   {{ votacion.num_opciones }} opci{{ votacion.num_opciones|pluralize:"ón,ones" }} ·
                   {{ votacion.num_votos }} voto{{ votacion.num_votos|pluralize }}
                 </div>
-                {% if votacion.estado == 'BORRADOR' and votacion.num_validas < 2 %}
+                {% if votacion.es_ronda_derivada %}
+                  <p class="meta">Recibe sus candidatos del resultado de «{{ votacion.ronda_anterior.nombre }}».</p>
+                {% endif %}
+                {% if votacion.resultado %}
+                  <p class="resultado-voto">
+                    <strong>{{ votacion.get_resultado_display }}</strong>{% if votacion.opcion_ganadora %}: {{ votacion.opcion_ganadora.nombre }}{% endif %}
+                    {% if votacion.decision_empate %}<br><span class="meta">Decisión: {{ votacion.decision_empate }}</span>{% endif %}
+                  </p>
+                {% endif %}
+                {% if not votacion.es_ronda_derivada and votacion.estado == 'BORRADOR' and votacion.num_validas < 2 %}
                   <p class="aviso">Necesita al menos 2 opciones válidas (sin contar el voto en blanco) para programar la edición.</p>
+                {% endif %}
+                {% if votacion.falta_siguiente and en_borrador %}
+                  <p class="aviso">Su regla puede requerir otra ronda: configúrala antes de programar.</p>
+                {% endif %}
+                {% if votacion.empate_pendiente %}
+                  <p class="aviso">Empate: decide quién {% if votacion.regla_resultado == 'MAYORIA_SIMPLE' %}gana{% else %}pasa{% endif %}.</p>
+                {% endif %}
+                {% if votacion.es_ronda_derivada and votacion.estado == 'BORRADOR' and votacion.ronda_anterior.resultado == 'REPETIR' %}
+                  <p class="aviso">Ganó el voto en blanco: carga candidatos nuevos y prepárala.</p>
                 {% endif %}
                 <div class="acciones">
                   <a class="button mini" href="{% url 'gestion:opcion_lista' votacion.id %}">Opciones</a>
+                  <a class="button ghost mini" href="{% url 'gestion:normativa_lista' votacion.id %}">Normativas</a>
+                  {% if votacion.falta_siguiente and en_borrador and form %}
+                    <a class="button mini" href="{% url 'gestion:ronda_siguiente' votacion.id %}">+ Ronda siguiente</a>
+                  {% endif %}
+                  {% if votacion.es_ronda_derivada and puede_quitar %}
+                    <form method="post" action="{% url 'gestion:ronda_eliminar' votacion.id %}">
+                      {% csrf_token %}<button type="submit" class="ghost peligro mini">Quitar ronda</button>
+                    </form>
+                  {% endif %}
+                  {% if votacion.empate_pendiente and puede_editar_votaciones %}
+                    <a class="button mini" href="{% url 'gestion:empate_resolver' votacion.id %}">Resolver empate</a>
+                  {% endif %}
+                  {% if votacion.es_ronda_derivada and votacion.estado == 'BORRADOR' and votacion.ronda_anterior.resultado == 'REPETIR' and puede_editar_votaciones %}
+                    <form method="post" action="{% url 'gestion:ronda_preparar' votacion.id %}">
+                      {% csrf_token %}<button type="submit" class="mini">Preparar ronda</button>
+                    </form>
+                  {% endif %}
                   {% if puede_editar_votaciones %}
                     {% if not votacion.es_final and edicion.estado != 'FINALIZADA' %}
                       <a class="button ghost mini" href="{% url 'gestion:votacion_editar' votacion.id %}?siguiente={{ aqui|urlencode }}">Editar</a>

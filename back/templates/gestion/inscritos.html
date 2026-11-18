@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+
+{% block title %}Inscritos — {{ edicion }}{% endblock %}
+
+{% block content %}
+  <p class="crumbs"><a href="{% url 'gestion:edicion_gestionar' edicion.id %}">← {{ edicion }}</a></p>
+
+  <div class="pagina-head">
+    <div>
+      <h1>Inscritos de {{ edicion }}</h1>
+      <p class="lead">En las votaciones «solo inscritos» vota quien se inscribió antes de que
+        abrieran. Los votantes también pueden inscribirse solos desde la página de la edición.</p>
+    </div>
+  </div>
+
+  {% if admite %}
+    <section class="panel-form">
+      <h2>Inscribir por documento</h2>
+      {% url 'gestion:inscritos' edicion.id as cancelar %}
+      {% include 'gestion/_formulario.html' %}
+    </section>
+  {% else %}
+    <p class="msg info">La edición está {{ edicion.get_estado_display|lower }}: ya no admite inscripciones.</p>
+  {% endif %}
+
+  {% if informe %}
+    <div class="msg info">
+      <p><strong>{{ informe.inscritos|length }}</strong> inscrito(s) ·
+        <strong>{{ informe.ya_inscritos|length }}</strong> ya estaban ·
+        <strong>{{ informe.sin_cuenta|length }}</strong> sin cuenta ·
+        <strong>{{ informe.no_votantes|length }}</strong> no son votantes.</p>
+      {% if informe.sin_cuenta %}<p>Sin cuenta: {{ informe.sin_cuenta|join:", " }}</p>{% endif %}
+      {% if informe.no_votantes %}<p>No son votantes: {{ informe.no_votantes|join:", " }}</p>{% endif %}
+    </div>
+  {% endif %}
+
+  <h2>{{ inscripciones|length }} inscrito{{ inscripciones|length|pluralize }}</h2>
+  {% if inscripciones %}
+    <div class="tabla-scroll"><table>
+      <thead><tr><th>Documento</th><th>Nombre</th><th>Fecha</th><th>Inscrito por</th><th></th></tr></thead>
+      <tbody>
+        {% for inscripcion in inscripciones %}
+          <tr>
+            <td>{{ inscripcion.usuario.perfil_usuario.documento|default:"—" }}</td>
+            <td>{{ inscripcion.usuario.get_full_name|default:inscripcion.usuario.username }}</td>
+            <td>{{ inscripcion.fecha_inscripcion|date:"j b Y, H:i" }}</td>
+            <td>{% if inscripcion.origen == 'ORGANIZADOR' %}{{ inscripcion.inscrito_por.username|default:"organizador" }}{% else %}el votante{% endif %}</td>
+            <td>
+              {% if puede_retirar %}
+                <form method="post" action="{% url 'gestion:inscrito_retirar' edicion.id inscripcion.id %}">
+                  {% csrf_token %}<button type="submit" class="ghost peligro mini">Retirar</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  {% else %}
+    <p class="empty">Todavía no hay inscritos.</p>
+  {% endif %}
+{% endblock %}

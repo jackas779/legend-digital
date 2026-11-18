@@ -17,8 +17,10 @@
     {% if puede_crear %}<a class="button" href="{% url 'gestion:opcion_crear' votacion.id %}">+ Nueva opción</a>{% endif %}
   </div>
 
-  {% if votacion.estado == 'LISTA' %}
-    <p class="msg info">La edición ya está programada: las opciones quedan fijas y solo se corrigen sus textos.</p>
+  {% if votacion.es_ronda_derivada and votacion.estado == 'BORRADOR' and not puede_crear %}
+    <p class="msg info">Esta ronda recibe sus candidatos (con su foto) al escrutar «{{ votacion.ronda_anterior.nombre }}».</p>
+  {% elif votacion.estado == 'LISTA' %}
+    <p class="msg info">La edición ya está programada: las opciones quedan fijas y solo se corrigen sus textos y fotos.</p>
   {% elif votacion.estado != 'BORRADOR' %}
     <p class="msg info">La votación está {{ votacion.get_estado_display|lower }}: sus opciones ya no se modifican.</p>
   {% endif %}
@@ -26,6 +28,7 @@
   {% for opcion in opciones %}
     <article class="card fila-opcion">
       <span class="num-opcion{% if opcion.es_voto_blanco %} blanco{% endif %}">{{ opcion.orden }}</span>
+      {% include 'votacion/_foto.html' with opcion=opcion clase='mini' %}
       <div class="textos">
         <strong>{{ opcion.nombre }}</strong>
         {% if opcion.es_voto_blanco %}<span class="badge">Voto en blanco</span>{% endif %}

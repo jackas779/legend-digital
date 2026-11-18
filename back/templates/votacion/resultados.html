@@ -6,17 +6,35 @@
   <div class="tarjeton">
     <p class="crumbs"><a href="{% url 'edicion-detalle' votacion.edicion.pk %}">← {{ votacion.edicion }}</a></p>
 
-    <h1>{{ votacion.nombre }}</h1>
+    <h1>{% if votacion.numero_ronda > 1 %}<span class="meta">Ronda {{ votacion.numero_ronda }} ·</span> {% endif %}{{ votacion.nombre }}</h1>
     <p class="lead">
       Resultados · {{ votacion.categoria }}
-      {% if votacion.tiene_resultado_final %}<span class="badge finalizada">Resultado final</span>{% elif votacion.esta_abierta %}<span class="badge activa"><span class="punto-vivo" aria-hidden="true"></span> En vivo</span>{% endif %}
+      {% if votacion.tiene_resultado_final %}<span class="badge finalizada">Resultado final</span>{% elif votacion.esta_abierta %}<span class="badge activa"><span class="punto-vivo" aria-hidden="true"></span> En vivo (solo equipo interno)</span>{% endif %}
     </p>
 
-    <p class="total-votos"><strong>{{ total }}</strong> voto{{ total|pluralize }} registrado{{ total|pluralize }}</p>
+    <p class="total-votos"><strong>{{ total }}</strong> voto{{ total|pluralize }} registrado{{ total|pluralize }}{% if participacion %} · participación {{ participacion.porcentaje }} % de los inscritos{% endif %}</p>
 
-    {% if lider %}
+    {% if votacion.resultado %}
       <div class="lider-banner">
-        <span class="meta">{% if votacion.tiene_resultado_final %}Ganador{% else %}Va primero{% endif %}</span>
+        <span class="meta">{{ votacion.get_resultado_display }}</span>
+        {% if votacion.opcion_ganadora %}
+          <div class="eleccion-dialogo">
+            {% include 'votacion/_foto.html' with opcion=votacion.opcion_ganadora clase='grande' %}
+            <div>
+              <strong>{{ votacion.opcion_ganadora.nombre }}</strong>
+              {% if votacion.opcion_ganadora.subtitulo %}<br><span class="meta">{{ votacion.opcion_ganadora.subtitulo }}</span>{% endif %}
+            </div>
+          </div>
+        {% elif siguiente and votacion.resultado != 'REPETIR' and votacion.resultado != 'EMPATE' %}
+          <strong>Pasan a «{{ siguiente.nombre }}»</strong>
+        {% elif votacion.resultado == 'REPETIR' %}
+          <strong>La votación se repetirá con otros candidatos</strong>
+        {% endif %}
+        {% if votacion.decision_empate %}<span class="meta">Decisión del organizador: {{ votacion.decision_empate }}</span>{% endif %}
+      </div>
+    {% elif lider %}
+      <div class="lider-banner">
+        <span class="meta">{% if votacion.tiene_resultado_final %}Primer lugar{% else %}Va primero{% endif %}</span>
         <strong>{{ lider.nombre }}</strong>
         {% if lider.subtitulo %}<span class="meta">{{ lider.subtitulo }}</span>{% endif %}
       </div>
@@ -25,7 +43,10 @@
     {% for opcion in opciones %}
       <div class="bar-row{% if opcion == lider %} es-lider{% endif %}">
         <div class="bar-head">
-          <span>{{ opcion.nombre }}</span>
+          <span class="eleccion-dialogo">
+            {% include 'votacion/_foto.html' with opcion=opcion clase='mini' %}
+            <span>{{ opcion.nombre }}{% if opcion.pasa %} <span class="badge pasa">Pasa</span>{% endif %}</span>
+          </span>
           <span class="votos">{{ opcion.total }} · {{ opcion.porcentaje }}%</span>
         </div>
         <div class="bar"><span style="width: {{ opcion.porcentaje|stringformat:'s' }}%"></span></div>
@@ -35,6 +56,7 @@
     {% endfor %}
 
     <p class="enlaces-pie">
+      {% if siguiente and siguiente.estado != 'CANCELADA' %}<a href="{% url 'tarjeton' siguiente.pk %}">Ir a «{{ siguiente.nombre }}»</a>{% endif %}
       {% if votacion.esta_abierta %}<a href="{% url 'tarjeton' votacion.pk %}">Ir al tarjetón</a>{% endif %}
       {% if user.is_authenticated and rol_actual == 'Votante' %}<a href="{% url 'mis_votos' %}">Mis votos</a>{% endif %}
     </p>

@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — Gestión{% endblock %}
+
+{% block content %}
+  <div class="panel-form">
+    <h1>{{ titulo }}</h1>
+    <p class="lead">{{ votacion.nombre }}</p>
+    {% url 'gestion:normativa_lista' votacion.id as cancelar %}
+    {% include 'gestion/_formulario.html' %}
+  </div>
+{% endblock %}

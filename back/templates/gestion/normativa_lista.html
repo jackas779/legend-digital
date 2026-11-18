@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block title %}Normativas — {{ votacion.nombre }}{% endblock %}
+
+{% block content %}
+  <p class="crumbs"><a href="{% url 'gestion:edicion_gestionar' votacion.edicion_id %}">← {{ votacion.edicion }}</a></p>
+
+  <div class="pagina-head">
+    <div>
+      <h1>Normativas de «{{ votacion.nombre }}»</h1>
+      <p class="lead">Las reglas de la votación. Se muestran al votante en el tarjetón.</p>
+    </div>
+    {% if puede_editar %}<a class="button" href="{% url 'gestion:normativa_crear' votacion.id %}">+ Nueva normativa</a>{% endif %}
+  </div>
+
+  {% for normativa in normativas %}
+    <article class="card fila-opcion">
+      <div class="textos">
+        <strong>{{ normativa.titulo }}</strong>
+        {% if normativa.contenido_html %}<div class="meta">{{ normativa.contenido_html|striptags|truncatechars:160 }}</div>{% endif %}
+      </div>
+      {% if puede_editar %}
+        <div class="acciones">
+          <a class="button ghost mini" href="{% url 'gestion:normativa_editar' votacion.id normativa.id %}">Editar</a>
+          <form method="post" action="{% url 'gestion:normativa_eliminar' votacion.id normativa.id %}">
+            {% csrf_token %}<button type="submit" class="ghost peligro mini">Eliminar</button>
+          </form>
+        </div>
+      {% endif %}
+    </article>
+  {% empty %}
+    <p class="empty">Esta votación no tiene normativas.</p>
+  {% endfor %}
+{% endblock %}

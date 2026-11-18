@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ titulo }} — Gestión{% endblock %}
+
+{% block content %}
+  <p class="crumbs"><a href="{% url 'gestion:edicion_gestionar' anterior.edicion_id %}">← {{ anterior.edicion }}</a></p>
+  <div class="panel-form">
+    <h1>{{ titulo }}</h1>
+    <p class="lead">
+      Esta ronda se crea vacía: recibirá sus candidatos al escrutar «{{ anterior.nombre }}»
+      ({% if anterior.regla_resultado == 'MAYORIA_ABSOLUTA' %}los 2 primeros si nadie supera el 50 %{% elif anterior.regla_resultado == 'CLASIFICAN_N' %}los {{ anterior.clasifican }} primeros{% else %}candidatos nuevos si gana el voto en blanco{% endif %}).
+      Si no hace falta, se cancela sola. Debe abrir después del
+      {{ anterior.fecha_cierre|date:"j b Y, H:i" }}.
+    </p>
+    {% url 'gestion:edicion_gestionar' anterior.edicion_id as cancelar %}
+    {% include 'gestion/_formulario.html' %}
+  </div>
+{% endblock %}
