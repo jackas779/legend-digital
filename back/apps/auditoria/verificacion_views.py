@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from back.apps.elecciones.models import Edicion, Votacion
-from back.apps.usuarios.permisos import requiere_permiso
+from back.apps.usuarios.permisos import requiere_permiso, sin_permiso
 
 from . import discrepancias as flujo
 from .models import Discrepancia
@@ -143,6 +143,12 @@ def discrepancia_detalle(request, discrepancia_id):
 def discrepancia_accion(request, discrepancia_id, accion):
     """resolver | descartar (organizador/administrador) · confirmar | reabrir (auditor)."""
     discrepancia = get_object_or_404(Discrepancia, pk=discrepancia_id)
+    # Cada acción exige su propio permiso: resolver es de quien resuelve,
+    # confirmar o reabrir es del auditor.
+    if accion in ('resolver', 'descartar') and not flujo.puede_resolver(request.user):
+        return sin_permiso(request, 'discrepancias.resolver')
+    if accion in ('confirmar', 'reabrir') and not flujo.puede_verificar(request.user):
+        return sin_permiso(request, 'discrepancias.reportar')
     texto = request.POST.get('texto', '')
     mensajes = {
         'resolver': 'Discrepancia resuelta. El auditor puede confirmar la resolución.',
