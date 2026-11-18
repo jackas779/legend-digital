@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+
+{% block title %}Discrepancia — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <p class="crumbs"><a href="{% url 'discrepancias' %}">← Discrepancias</a></p>
+
+  <div class="panel-form">
+    <h1>{{ discrepancia.get_tipo_display }}</h1>
+    <p class="lead">
+      <span class="badge {{ discrepancia.estado|lower }}">{{ discrepancia.get_estado_display }}</span>
+      {% if discrepancia.confirmada %}<span class="badge resuelta">Confirmada por el auditor</span>{% endif %}
+      {% if discrepancia.veces_reabierta %}<span class="badge alerta">Reabierta {{ discrepancia.veces_reabierta }} vez{{ discrepancia.veces_reabierta|pluralize:",es" }}</span>{% endif %}
+    </p>
+
+    <p><strong>Edición:</strong> {{ discrepancia.edicion }} ({{ discrepancia.edicion.get_estado_display|lower }})
+      {% if discrepancia.votacion %}<br><strong>Votación:</strong> {{ discrepancia.votacion.nombre }}{% endif %}</p>
+    <p><strong>Descripción:</strong> {{ discrepancia.descripcion }}</p>
+    <p class="meta">Registrada el {{ discrepancia.fecha_reporte|date:"j b Y, H:i" }} por {{ discrepancia.reportada_por.username }}</p>
+
+    {% if discrepancia.resuelta_por %}
+      <p><strong>Resolución:</strong> {{ discrepancia.resolucion|linebreaksbr }}</p>
+      <p class="meta">Por {{ discrepancia.resuelta_por.username }} el {{ discrepancia.fecha_resolucion|date:"j b Y, H:i" }}</p>
+    {% endif %}
+    {% if discrepancia.confirmada %}
+      <p class="meta">Confirmada por {{ discrepancia.confirmada_por.username }} el {{ discrepancia.fecha_confirmacion|date:"j b Y, H:i" }}</p>
+    {% endif %}
+
+    {% if discrepancia.esta_abierta %}
+      {% if puede_resolver %}
+        <form method="post" action="{% url 'auditoria_discrepancia_accion' discrepancia.id 'resolver' %}">
+          {% csrf_token %}
+          <div class="campo">
+            <label for="texto">Explicación (obligatoria)</label>
+            <textarea id="texto" name="texto" rows="3" required></textarea>
+          </div>
+          <div class="acciones-form">
+            <button type="submit">Marcar como resuelta</button>
+            <button type="submit" class="ghost" formaction="{% url 'auditoria_discrepancia_accion' discrepancia.id 'descartar' %}">Descartar (falso positivo)</button>
+          </div>
+        </form>
+      {% else %}
+        <p class="msg info">Pendiente de resolución por: <strong>{{ responsable }}</strong>.</p>
+      {% endif %}
+    {% elif puede_verificar %}
+      <div class="acciones-form">
+        {% if not discrepancia.confirmada %}
+          <form method="post" action="{% url 'auditoria_discrepancia_accion' discrepancia.id 'confirmar' %}">
+            {% csrf_token %}<button type="submit">Confirmar resolución</button>
+          </form>
+        {% endif %}
+      </div>
+      <form method="post" action="{% url 'auditoria_discrepancia_accion' discrepancia.id 'reabrir' %}">
+        {% csrf_token %}
+        <div class="campo">
+          <label for="motivo">¿No quedó resuelta? Motivo para reabrir</label>
+          <textarea id="motivo" name="texto" rows="2" required></textarea>
+        </div>
+        <div class="acciones-form"><button type="submit" class="ghost peligro">Reabrir</button></div>
+      </form>
+    {% endif %}
+
+    <p><a href="{% url 'auditoria_edicion' discrepancia.edicion.id %}">Ver la verificación de la edición →</a></p>
+  </div>
+{% endblock %}

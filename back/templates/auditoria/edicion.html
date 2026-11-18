@@ -1,0 +1,133 @@
+{% extends 'base.html' %}
+
+{% block title %}Verificar {{ edicion }} — Auditoría{% endblock %}
+
+{% block content %}
+  <p class="crumbs"><a href="{% url 'auditoria_ediciones' %}">← Verificación</a></p>
+
+  <div class="pagina-head">
+    <div>
+      <h1>{{ edicion }}</h1>
+      <p class="lead">
+        <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
+        {% if edicion.finalizada_con_pendientes %}<span class="badge alerta">Finalizada con discrepancias pendientes</span>{% endif %}
+        {% if edicion.fecha_inicio %}{{ edicion.fecha_inicio|date:"j b Y, H:i" }} → {{ edicion.fecha_fin|date:"j b Y, H:i" }}{% endif %}
+      </p>
+      {% if edicion.cierre_anticipado %}
+        <p class="msg warning">Cierre anticipado el {{ edicion.fecha_cierre_real|date:"j b Y, H:i" }}: «{{ edicion.motivo_cierre }}»</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <h2>Votaciones</h2>
+  <div class="tabla-scroll"><table>
+    <thead>
+      <tr><th>Votación</th><th>Estado</th><th>Habilitados</th><th>Participantes</th><th>Votos en urna</th></tr>
+    </thead>
+    <tbody>
+      {% for votacion in votaciones %}
+        <tr>
+          <td>{{ votacion.nombre }} <span class="meta">· {{ votacion.categoria }}</span></td>
+          <td><span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span></td>
+          <td>{{ votacion.habilitados }}</td>
+          <td>{{ votacion.participantes }}</td>
+          <td>{{ votacion.votos }}{% if votacion.votos != votacion.participantes %} <span class="badge alerta">no cuadra</span>{% endif %}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="meta">Sin votaciones.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+
+  <h2>Verificación automática</h2>
+  {% if hallazgos %}
+    <p class="lead">Estos hallazgos salen de comparar el padrón, la urna, las firmas, las fechas y las actas.
+      Revísalos y registra los que correspondan.</p>
+    {% for hallazgo in hallazgos %}
+      <article class="card fila-opcion">
+        <div class="textos">
+          <strong>{{ hallazgo.tipo }}</strong>
+          <div class="meta">{{ hallazgo.descripcion }}</div>
+        </div>
+        {% if puede_verificar %}
+          <form method="post" action="{% url 'auditoria_reportar' edicion.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="tipo" value="{{ hallazgo.tipo }}">
+            <input type="hidden" name="descripcion" value="{{ hallazgo.descripcion }}">
+            <input type="hidden" name="origen" value="verificacion_automatica">
+            {% if hallazgo.votacion %}<input type="hidden" name="votacion" value="{{ hallazgo.votacion.id }}">{% endif %}
+            <button type="submit" class="ghost mini">Registrar discrepancia</button>
+          </form>
+        {% endif %}
+      </article>
+    {% endfor %}
+  {% else %}
+    <p class="msg success">Sin hallazgos: padrón, urna, firmas, horarios y actas coinciden.</p>
+  {% endif %}
+
+  {% if puede_verificar %}
+    <div class="campos-dos">
+      <section class="panel-form">
+        <h2>Confirmar que está en orden</h2>
+        <p class="lead">Deja constancia de que revisaste la edición en su estado actual
+          ({{ edicion.get_estado_display|lower }}).</p>
+        <form method="post" action="{% url 'auditoria_confirmar_edicion' edicion.id %}">
+          {% csrf_token %}
+          <div class="campo">
+            <label for="observacion">Observación (opcional)</label>
+            <textarea id="observacion" name="observacion" rows="2"></textarea>
+          </div>
+          <div class="acciones-form"><button type="submit">Confirmar en orden</button></div>
+        </form>
+      </section>
+
+      <section class="panel-form">
+        <h2>Registrar una discrepancia</h2>
+        <p class="lead">La resolverá: <strong>{{ responsable }}</strong>.</p>
+        <form method="post" action="{% url 'auditoria_reportar' edicion.id %}">
+          {% csrf_token %}
+          <div class="campo">
+            <label for="tipo">Tipo</label>
+            <select id="tipo" name="tipo">
+              {% for valor, etiqueta in tipos %}<option value="{{ valor }}">{{ etiqueta }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="campo">
+            <label for="votacion">Votación (opcional)</label>
+            <select id="votacion" name="votacion">
+              <option value="">Toda la edición</option>
+              {% for votacion in votaciones %}<option value="{{ votacion.id }}">{{ votacion.nombre }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="campo">
+            <label for="descripcion">Descripción</label>
+            <textarea id="descripcion" name="descripcion" rows="3" required></textarea>
+          </div>
+          <div class="acciones-form"><button type="submit">Registrar</button></div>
+        </form>
+      </section>
+    </div>
+  {% endif %}
+
+  <h2>Discrepancias</h2>
+  {% for discrepancia in discrepancias %}
+    <article class="card fila-opcion">
+      <div class="textos">
+        <strong><a href="{% url 'auditoria_discrepancia' discrepancia.id %}">{{ discrepancia.get_tipo_display }}</a></strong>
+        <span class="badge {{ discrepancia.estado|lower }}">{{ discrepancia.get_estado_display }}</span>
+        {% if discrepancia.confirmada %}<span class="badge resuelta">Confirmada</span>{% endif %}
+        <div class="meta">{{ discrepancia.descripcion|truncatechars:140 }}</div>
+        <div class="meta">{{ discrepancia.fecha_reporte|date:"j b Y, H:i" }} · {{ discrepancia.reportada_por.username }}{% if discrepancia.votacion %} · {{ discrepancia.votacion.nombre }}{% endif %}</div>
+      </div>
+    </article>
+  {% empty %}
+    <p class="empty">No hay discrepancias registradas en esta edición.</p>
+  {% endfor %}
+
+  <h2>Confirmaciones</h2>
+  {% for confirmacion in confirmaciones %}
+    <p class="meta">{{ confirmacion.fecha|date:"j b Y, H:i" }} · {{ confirmacion.auditor.username }} confirmó en estado {{ confirmacion.estado_edicion|lower }}{% if confirmacion.observacion %}: «{{ confirmacion.observacion }}»{% endif %}</p>
+  {% empty %}
+    <p class="empty">Todavía no hay confirmaciones.</p>
+  {% endfor %}
+{% endblock %}

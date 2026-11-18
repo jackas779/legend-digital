@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block title %}Discrepancias — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <div class="pagina-head">
+    <div>
+      <h1>Discrepancias</h1>
+      <p class="lead">Las registra el auditor. Hoy las resuelve: <strong>{{ responsable }}</strong>
+        {% if responsable == 'Administrador' %}(el rol Organizador no tiene el permiso para resolverlas){% endif %}.
+        Una discrepancia abierta no detiene el cierre de la edición.</p>
+    </div>
+  </div>
+
+  <form method="get" class="stack" aria-label="Filtrar discrepancias">
+    <select name="estado" aria-label="Estado">
+      {% for valor, etiqueta in estados %}
+        <option value="{{ valor }}" {% if valor == filtro %}selected{% endif %}>{{ etiqueta }}</option>
+      {% endfor %}
+      <option value="todas" {% if filtro == 'todas' %}selected{% endif %}>Todas</option>
+    </select>
+    <button type="submit" class="ghost">Filtrar</button>
+  </form>
+
+  {% for discrepancia in discrepancias %}
+    <article class="card fila-opcion">
+      <div class="textos">
+        <strong><a href="{% url 'auditoria_discrepancia' discrepancia.id %}">{{ discrepancia.get_tipo_display }}</a></strong>
+        <span class="badge {{ discrepancia.estado|lower }}">{{ discrepancia.get_estado_display }}</span>
+        {% if discrepancia.confirmada %}<span class="badge resuelta">Confirmada</span>{% endif %}
+        <div class="meta">{{ discrepancia.edicion }}{% if discrepancia.votacion %} · {{ discrepancia.votacion.nombre }}{% endif %}</div>
+        <div class="meta">{{ discrepancia.descripcion|truncatechars:160 }}</div>
+      </div>
+      <a class="button ghost mini" href="{% url 'auditoria_discrepancia' discrepancia.id %}">{% if puede_resolver and discrepancia.esta_abierta %}Resolver{% else %}Ver{% endif %}</a>
+    </article>
+  {% empty %}
+    <p class="empty">No hay discrepancias con ese filtro.</p>
+  {% endfor %}
+{% endblock %}
