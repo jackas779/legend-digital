@@ -187,6 +187,38 @@ class Votacion(models.Model):
     # Estados de los que no se vuelve: no se reabren ni se editan.
     ESTADOS_FINALES = (CERRADA, ESCRUTADA, CANCELADA)
 
+    # Quién puede votar.
+    LIBRE = 'LIBRE'
+    INSCRITOS = 'INSCRITOS'
+    MODOS = [
+        (LIBRE, 'Libre: cualquier votante con cuenta'),
+        (INSCRITOS, 'Solo inscritos antes de la apertura'),
+    ]
+
+    # Cómo se decide el resultado al escrutar.
+    MAYORIA_SIMPLE = 'MAYORIA_SIMPLE'
+    MAYORIA_ABSOLUTA = 'MAYORIA_ABSOLUTA'
+    CLASIFICAN_N = 'CLASIFICAN_N'
+    REGLAS = [
+        (MAYORIA_SIMPLE, 'Mayoría simple: gana quien saque más votos'),
+        (MAYORIA_ABSOLUTA, 'Mayoría absoluta (50 % + 1): si nadie la alcanza, segunda vuelta con los 2 primeros'),
+        (CLASIFICAN_N, 'Clasificatoria: los N primeros pasan a la siguiente ronda'),
+    ]
+
+    # Resultado aplicado al escrutar.
+    GANADOR = 'GANADOR'
+    SEGUNDA_RONDA = 'SEGUNDA_RONDA'
+    CLASIFICADOS = 'CLASIFICADOS'
+    REPETIR = 'REPETIR'
+    EMPATE = 'EMPATE'
+    RESULTADOS = [
+        (GANADOR, 'Hay ganador'),
+        (SEGUNDA_RONDA, 'Pasa a segunda vuelta'),
+        (CLASIFICADOS, 'Clasificados a la siguiente ronda'),
+        (REPETIR, 'Ganó el voto en blanco: se repite con otros candidatos'),
+        (EMPATE, 'Empate: requiere decisión del organizador'),
+    ]
+
     edicion = models.ForeignKey(Edicion, on_delete=models.CASCADE, related_name='votaciones')
     categoria = models.ForeignKey(Categoria, on_delete=models.PROTECT, related_name='votaciones')
     nombre = models.CharField(max_length=150)
@@ -194,7 +226,46 @@ class Votacion(models.Model):
     fecha_apertura = models.DateTimeField()
     fecha_cierre = models.DateTimeField()
     estado = models.CharField(max_length=20, choices=ESTADOS, default=BORRADOR)
-    mostrar_resultados_en_vivo = models.BooleanField(default=False)
+
+    modo_participacion = models.CharField(
+        'quién puede votar', max_length=20, choices=MODOS, default=LIBRE
+    )
+    regla_resultado = models.CharField(
+        'regla de resultado', max_length=20, choices=REGLAS, default=MAYORIA_SIMPLE
+    )
+    clasifican = models.PositiveSmallIntegerField(
+        'cuántos clasifican',
+        default=2,
+        help_text='Solo para la clasificatoria: cuántos pasan a la siguiente ronda.',
+    )
+    repetir_si_gana_blanco = models.BooleanField(
+        'repetir si gana el voto en blanco',
+        default=False,
+        help_text='Si el voto en blanco saca más del 50 %, se repite con otros candidatos.',
+    )
+
+    # Rondas: la siguiente se configura de antemano y recibe sus candidatos
+    # (los clasificados o los 2 primeros) al escrutar esta.
+    # RESTRICT: no se borra una ronda que alimenta a otra, salvo que ambas
+    # caigan juntas (por ejemplo, al eliminar la edición completa).
+    ronda_anterior = models.OneToOneField(
+        'self',
+        on_delete=models.RESTRICT,
+        null=True,
+        blank=True,
+        related_name='ronda_siguiente',
+    )
+    numero_ronda = models.PositiveSmallIntegerField(default=1)
+
+    resultado = models.CharField(max_length=20, choices=RESULTADOS, blank=True, default='')
+    opcion_ganadora = models.ForeignKey(
+        'Opcion',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    decision_empate = models.TextField(blank=True, default='')
 
     class Meta:
         db_table = 'votaciones'
@@ -235,6 +306,71 @@ class Votacion(models.Model):
         return self.estado in self.ESTADOS_FINALES
 
     @property
+    def es_ronda_derivada(self):
+        """Sus candidatos salen del resultado de la ronda anterior."""
+        return self.ronda_anterior_id is not None
+
+    @property
+    def necesita_ronda_siguiente(self):
+        return (
+            self.regla_resultado in (self.MAYORIA_ABSOLUTA, self.CLASIFICAN_N)
+            or self.repetir_si_gana_blanco
+        )
+
+    @property
+    def admite_cambios_de_estructura(self):
+        """Opciones y fechas: con la edición en borrador, o en una ronda
+        derivada que aún espera sus candidatos (por ejemplo, tras un REPETIR)."""
+        if self.edicion.admite_cambios_de_estructura:
+            return True
+        return (
+            self.es_ronda_derivada
+            and self.estado == self.BORRADOR
+            and self.edicion.estado in (Edicion.PROGRAMADA, Edicion.ACTIVA)
+        )
+
+    @property
+    def admite_opciones_nuevas(self):
+        """Agregar o quitar candidatos a mano.
+
+        Votación normal: en BORRADOR con la edición en borrador. Ronda
+        derivada: sus candidatos los pone el escrutinio de la anterior; a
+        mano solo tras una repetición (ganó el voto en blanco).
+        """
+        if self.estado != self.BORRADOR:
+            return False
+        if self.es_ronda_derivada:
+            return (
+                self.ronda_anterior.resultado == self.REPETIR
+                and self.admite_cambios_de_estructura
+            )
+        return self.edicion.admite_cambios_de_estructura
+
+    @property
+    def solo_inscritos(self):
+        return self.modo_participacion == self.INSCRITOS
+
+    def participacion(self):
+        """Participación en porcentaje (lo único público mientras está abierta).
+
+        Solo tiene sentido con lista de inscritos; en modo libre no hay base
+        sobre la cual calcularla y devuelve None.
+        """
+        if not self.solo_inscritos:
+            return None
+        from back.apps.votacion.models import InscripcionEdicion, PadronVotante
+
+        elegibles = InscripcionEdicion.objects.filter(
+            edicion_id=self.edicion_id, fecha_inscripcion__lt=self.fecha_apertura
+        ).count()
+        votaron = PadronVotante.objects.filter(votacion=self, ha_votado=True).count()
+        return {
+            'votaron': votaron,
+            'elegibles': elegibles,
+            'porcentaje': round(votaron * 100 / elegibles) if elegibles else 0,
+        }
+
+    @property
     def tiene_resultado_final(self):
         return self.estado in (self.CERRADA, self.ESCRUTADA)
 
@@ -265,6 +401,19 @@ class Opcion(models.Model):
     descripcion = models.TextField(blank=True, null=True)
     orden = models.PositiveIntegerField(help_text='Número de casilla en el tarjetón.')
     es_voto_blanco = models.BooleanField(default=False)
+    foto = models.ImageField(
+        upload_to='opciones/%Y/',
+        blank=True,
+        help_text='JPG, PNG o WEBP de hasta 2 MB. Se recorta cuadrada.',
+    )
+    # En una ronda derivada: la opción de la ronda anterior de la que viene.
+    opcion_origen = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
     foto_recurso = models.ForeignKey(
         'RecursoMultimedia',
         on_delete=models.SET_NULL,
@@ -292,6 +441,12 @@ class Opcion(models.Model):
     @property
     def total_votos(self):
         return self.votos.count()
+
+    @property
+    def iniciales(self):
+        """Respaldo visual cuando la opción no tiene foto."""
+        palabras = [p for p in self.nombre.split() if p[:1].isalpha()]
+        return ''.join(p[0] for p in palabras[:2]).upper() or str(self.orden)
 
 
 class Normativa(models.Model):

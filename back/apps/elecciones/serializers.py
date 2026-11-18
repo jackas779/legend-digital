@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from back.apps.usuarios.permisos import tiene_permiso
+
 from .ciclo import errores_de_fechas_votacion
 from .models import (
     Categoria,
@@ -94,11 +96,24 @@ class CategoriaSerializer(serializers.ModelSerializer):
         return nombre
 
 
+def _ve_conteo(serializer, votacion):
+    """El conteo es público al cierre; antes, solo con ``resultados.ver``."""
+    if votacion is None:
+        return False
+    if votacion.tiene_resultado_final:
+        return True
+    request = serializer.context.get('request')
+    return bool(request) and tiene_permiso(request.user, 'resultados.ver')
+
+
 class VotacionSerializer(serializers.ModelSerializer):
     edicion_nombre = serializers.CharField(source='edicion.nombre', read_only=True)
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
     titulo = serializers.ReadOnlyField()
-    total_votos = serializers.ReadOnlyField()
+    total_votos = serializers.SerializerMethodField()
+
+    def get_total_votos(self, votacion):
+        return votacion.total_votos if _ve_conteo(self, votacion) else None
 
     class Meta:
         model = Votacion
@@ -114,10 +129,19 @@ class VotacionSerializer(serializers.ModelSerializer):
             'fecha_apertura',
             'fecha_cierre',
             'estado',
-            'mostrar_resultados_en_vivo',
+            'modo_participacion',
+            'regla_resultado',
+            'clasifican',
+            'repetir_si_gana_blanco',
+            'ronda_anterior',
+            'numero_ronda',
+            'resultado',
+            'opcion_ganadora',
             'total_votos',
         ]
-        read_only_fields = ['id', 'estado']
+        read_only_fields = [
+            'id', 'estado', 'ronda_anterior', 'numero_ronda', 'resultado', 'opcion_ganadora',
+        ]
 
     def validate(self, attrs):
         instancia = self.instance
@@ -162,7 +186,11 @@ class VotacionSerializer(serializers.ModelSerializer):
 
 class OpcionSerializer(serializers.ModelSerializer):
     foto_recurso_detalle = RecursoMultimediaSerializer(source='foto_recurso', read_only=True)
-    total_votos = serializers.ReadOnlyField()
+    foto = serializers.ImageField(read_only=True)
+    total_votos = serializers.SerializerMethodField()
+
+    def get_total_votos(self, opcion):
+        return opcion.total_votos if _ve_conteo(self, opcion.votacion) else None
 
     class Meta:
         model = Opcion
@@ -174,6 +202,7 @@ class OpcionSerializer(serializers.ModelSerializer):
             'descripcion',
             'orden',
             'es_voto_blanco',
+            'foto',
             'foto_recurso',
             'foto_recurso_detalle',
             'total_votos',
@@ -191,7 +220,7 @@ class OpcionSerializer(serializers.ModelSerializer):
         # Se agregan solo en BORRADOR; con la votación LISTA se corrigen
         # textos; abierta o terminada, nada.
         if votacion is not None:
-            if self.instance is None and votacion.estado != Votacion.BORRADOR:
+            if self.instance is None and not votacion.admite_opciones_nuevas:
                 raise serializers.ValidationError(
                     {'votacion': f'La votación está {votacion.estado}: no admite opciones nuevas.'}
                 )

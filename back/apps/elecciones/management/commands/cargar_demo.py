@@ -96,7 +96,6 @@ class Command(BaseCommand):
                     'fecha_apertura': ahora - timedelta(hours=1),
                     'fecha_cierre': fin,
                     'estado': Votacion.ABIERTA,
-                    'mostrar_resultados_en_vivo': True,
                 },
             )
 

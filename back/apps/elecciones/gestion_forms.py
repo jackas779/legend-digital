@@ -13,7 +13,8 @@ estado de la edición:
 from django import forms
 
 from .ciclo import errores_de_fechas_votacion
-from .models import Categoria, Edicion, Opcion, Votacion
+from .imagenes import normalizar_foto
+from .models import Categoria, Edicion, Normativa, Opcion, Votacion
 
 FORMATO_FECHA = '%Y-%m-%dT%H:%M'
 
@@ -165,7 +166,10 @@ class VotacionForm(forms.ModelForm):
             'descripcion',
             'fecha_apertura',
             'fecha_cierre',
-            'mostrar_resultados_en_vivo',
+            'modo_participacion',
+            'regla_resultado',
+            'clasifican',
+            'repetir_si_gana_blanco',
         )
         widgets = {
             'descripcion': forms.Textarea(attrs={'rows': 2}),
@@ -186,10 +190,15 @@ class VotacionForm(forms.ModelForm):
         if instancia.pk:
             # Una votación no se muda de edición.
             _bloquear(self, ('edicion',), 'La edición de una votación no cambia.')
-            if not instancia.edicion.admite_cambios_de_estructura:
+            if instancia.es_ronda_derivada:
+                _bloquear(self, ('categoria',), 'Una ronda conserva la categoría de la anterior.')
+            if not instancia.admite_cambios_de_estructura:
                 _bloquear(
                     self,
-                    ('categoria', 'fecha_apertura', 'fecha_cierre'),
+                    (
+                        'categoria', 'fecha_apertura', 'fecha_cierre', 'modo_participacion',
+                        'regla_resultado', 'clasifican', 'repetir_si_gana_blanco',
+                    ),
                     'Fijo desde que la edición se programó.',
                 )
         else:
@@ -212,6 +221,28 @@ class VotacionForm(forms.ModelForm):
         ):
             self.add_error('fecha_cierre', error)
 
+        anterior = self.instance.ronda_anterior if self.instance.pk else None
+        apertura = cleaned.get('fecha_apertura')
+        if anterior is not None and apertura and apertura < anterior.fecha_cierre:
+            self.add_error('fecha_apertura', 'Debe abrir después del cierre de la ronda anterior.')
+
+        if cleaned.get('regla_resultado') == Votacion.CLASIFICAN_N and (cleaned.get('clasifican') or 0) < 2:
+            self.add_error('clasifican', 'Deben clasificar al menos 2.')
+
+        siguiente = (
+            Votacion.objects.filter(ronda_anterior=self.instance).first() if self.instance.pk else None
+        )
+        necesita = (
+            cleaned.get('regla_resultado') in (Votacion.MAYORIA_ABSOLUTA, Votacion.CLASIFICAN_N)
+            or cleaned.get('repetir_si_gana_blanco')
+        )
+        if siguiente is not None and not necesita:
+            self.add_error(
+                'regla_resultado',
+                f'Esta votación alimenta «{siguiente.nombre}»: quita primero esa ronda '
+                'o elige una regla que la use.',
+            )
+
         # VO2: nombre obligatorio y único por edición+categoría+nombre.
         if edicion and categoria and nombre:
             existe = (
@@ -226,6 +257,113 @@ class VotacionForm(forms.ModelForm):
                     f'Ya existe una votación «{nombre}» en {edicion} → {categoria}.',
                 )
         return cleaned
+
+
+class RondaSiguienteForm(forms.ModelForm):
+    """Configura de antemano la ronda que sigue a una votación.
+
+    Se crea vacía (sin candidatos): los recibe al escrutar la anterior.
+    Conserva edición y categoría; abre después del cierre de la anterior.
+    """
+
+    class Meta:
+        model = Votacion
+        fields = (
+            'nombre',
+            'descripcion',
+            'fecha_apertura',
+            'fecha_cierre',
+            'modo_participacion',
+            'regla_resultado',
+            'clasifican',
+            'repetir_si_gana_blanco',
+        )
+        widgets = {
+            'descripcion': forms.Textarea(attrs={'rows': 2}),
+            'fecha_apertura': _widget_fecha(),
+            'fecha_cierre': _widget_fecha(),
+        }
+
+    def __init__(self, *args, anterior=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.anterior = anterior
+        if anterior is not None and not self.is_bound:
+            # Por defecto: misma forma de participación; la segunda vuelta
+            # entre 2 se decide por mayoría simple.
+            self.initial.setdefault('modo_participacion', anterior.modo_participacion)
+            self.initial.setdefault('regla_resultado', Votacion.MAYORIA_SIMPLE)
+            sugerido = {
+                Votacion.MAYORIA_ABSOLUTA: 'Segunda vuelta',
+                Votacion.CLASIFICAN_N: 'Final',
+            }.get(anterior.regla_resultado, 'Nueva ronda')
+            self.initial.setdefault('nombre', f'{anterior.nombre} · {sugerido}')
+
+    def clean(self):
+        cleaned = super().clean()
+        anterior = self.anterior
+        for error in errores_de_fechas_votacion(
+            anterior.edicion, cleaned.get('fecha_apertura'), cleaned.get('fecha_cierre')
+        ):
+            self.add_error('fecha_cierre', error)
+        apertura = cleaned.get('fecha_apertura')
+        if apertura and apertura < anterior.fecha_cierre:
+            self.add_error('fecha_apertura', 'Debe abrir después del cierre de la ronda anterior.')
+        if cleaned.get('regla_resultado') == Votacion.CLASIFICAN_N and (cleaned.get('clasifican') or 0) < 2:
+            self.add_error('clasifican', 'Deben clasificar al menos 2.')
+        nombre = (cleaned.get('nombre') or '').strip()
+        if nombre and Votacion.objects.filter(
+            edicion=anterior.edicion, categoria=anterior.categoria, nombre__iexact=nombre
+        ).exists():
+            self.add_error('nombre', 'Ya existe una votación con ese nombre en la categoría.')
+        return cleaned
+
+
+class EmpateForm(forms.Form):
+    """El organizador decide un empate: quién gana o quiénes pasan."""
+
+    opciones = forms.ModelMultipleChoiceField(
+        queryset=Opcion.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
+        label='Opciones elegidas',
+    )
+    motivo = forms.CharField(
+        label='Fundamento de la decisión',
+        widget=forms.Textarea(attrs={'rows': 3}),
+        help_text='Obligatorio. Queda registrado en la votación y en la auditoría.',
+    )
+
+    def __init__(self, *args, votacion=None, necesarias=1, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.necesarias = necesarias
+        self.fields['opciones'].queryset = votacion.opciones.filter(es_voto_blanco=False).order_by('orden')
+        self.fields['opciones'].help_text = f'Elige exactamente {necesarias}.'
+
+    def clean_opciones(self):
+        elegidas = self.cleaned_data['opciones']
+        if len(elegidas) != self.necesarias:
+            raise forms.ValidationError(f'Debes elegir exactamente {self.necesarias}.')
+        return elegidas
+
+
+class InscripcionListaForm(forms.Form):
+    documentos = forms.CharField(
+        label='Documentos a inscribir',
+        widget=forms.Textarea(attrs={'rows': 6, 'placeholder': '1015487962\n1023654789\n…'}),
+        help_text='Uno por línea, o separados por coma. Solo se inscriben cuentas con rol Votante.',
+    )
+
+
+class NormativaForm(forms.ModelForm):
+    class Meta:
+        model = Normativa
+        fields = ('titulo', 'contenido_html', 'archivo_pdf_url')
+        labels = {
+            'titulo': 'Título',
+            'contenido_html': 'Contenido',
+            'archivo_pdf_url': 'Enlace a PDF (opcional)',
+        }
+        widgets = {'contenido_html': forms.Textarea(attrs={'rows': 8})}
+        help_texts = {'contenido_html': 'Texto de la regla. Se muestra como texto plano en el tarjetón.'}
 
 
 class EdicionCategoriaForm(forms.Form):
@@ -301,16 +439,24 @@ class EdicionCategoriaForm(forms.Form):
 class OpcionForm(forms.ModelForm):
     """Creación/edición de una opción dentro de una votación (OP2).
 
-    Con la votación LISTA (edición ya programada) solo se corrigen textos:
-    la casilla y el voto en blanco quedan fijos.
+    Con la votación LISTA (edición ya programada) solo se corrigen textos y
+    la foto: la casilla y el voto en blanco quedan fijos.
     """
 
     class Meta:
         model = Opcion
-        fields = ('nombre', 'subtitulo', 'descripcion', 'orden', 'es_voto_blanco')
+        fields = ('nombre', 'subtitulo', 'descripcion', 'foto', 'orden', 'es_voto_blanco')
         widgets = {
             'descripcion': forms.Textarea(attrs={'rows': 2}),
+            'foto': forms.ClearableFileInput(attrs={'accept': 'image/jpeg,image/png,image/webp'}),
         }
+
+    def clean_foto(self):
+        foto = self.cleaned_data.get('foto')
+        # Solo se procesa una foto recién subida (no la que ya estaba guardada).
+        if foto and hasattr(foto, 'content_type'):
+            return normalizar_foto(foto)
+        return foto
 
     def __init__(self, *args, votacion=None, **kwargs):
         super().__init__(*args, **kwargs)

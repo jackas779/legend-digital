@@ -69,7 +69,9 @@ class VotacionAdmin(AdminPermisosMixin, admin.ModelAdmin):
     )
     list_filter = ('estado', 'edicion', 'categoria')
     search_fields = ('nombre',)
-    readonly_fields = ('estado',)
+    readonly_fields = (
+        'estado', 'ronda_anterior', 'numero_ronda', 'resultado', 'opcion_ganadora', 'decision_empate',
+    )
     inlines = [OpcionInline, NormativaInline]
 
 

@@ -23,7 +23,11 @@ from .gestion_forms import (
     CierreAnticipadoForm,
     EdicionCategoriaForm,
     EdicionForm,
+    EmpateForm,
+    InscripcionListaForm,
+    NormativaForm,
     OpcionForm,
+    RondaSiguienteForm,
     VotacionForm,
 )
 from .models import Categoria, Edicion, Opcion, Votacion
@@ -171,7 +175,6 @@ def edicion_gestionar(request, edicion_id):
                     fecha_apertura=datos['fecha_apertura'],
                     fecha_cierre=datos['fecha_cierre'],
                     estado=Votacion.BORRADOR,
-                    mostrar_resultados_en_vivo=True,
                 )
             registrar_evento(request, 'votaciones', 'votacion_creada', {'id': votacion.id})
             messages.success(
@@ -183,7 +186,7 @@ def edicion_gestionar(request, edicion_id):
             return redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
 
     votaciones = list(
-        edicion.votaciones.select_related('categoria')
+        edicion.votaciones.select_related('categoria', 'ronda_anterior', 'opcion_ganadora')
         .annotate(
             num_votos=Count('opciones__votos', distinct=True),
             num_opciones=Count('opciones', distinct=True),
@@ -191,8 +194,16 @@ def edicion_gestionar(request, edicion_id):
                 'opciones', filter=Q(opciones__es_voto_blanco=False), distinct=True
             ),
         )
-        .order_by('categoria__nombre', 'nombre')
+        .order_by('categoria__nombre', 'numero_ronda', 'nombre')
     )
+    con_siguiente = {v.ronda_anterior_id for v in votaciones if v.ronda_anterior_id}
+    for votacion in votaciones:
+        votacion.tiene_siguiente = votacion.pk in con_siguiente
+        votacion.falta_siguiente = votacion.necesita_ronda_siguiente and not votacion.tiene_siguiente
+        # Empate sin resolver: la ronda siguiente (si existe) espera la decisión.
+        votacion.empate_pendiente = (
+            votacion.resultado == Votacion.EMPATE and not votacion.decision_empate
+        )
 
     puede_editar = tiene_permiso(request.user, 'ediciones.editar')
     return render(
@@ -201,9 +212,12 @@ def edicion_gestionar(request, edicion_id):
         {
             'edicion': edicion,
             'votaciones': votaciones,
+            'pasos': _pasos(edicion),
             'num_categorias': len({v.categoria_id for v in votaciones}),
             'total_votos': sum(v.num_votos for v in votaciones),
             'num_por_escrutar': sum(1 for v in votaciones if v.estado == Votacion.CERRADA),
+            'num_inscritos': edicion.inscripciones.count(),
+            'usa_inscripcion': any(v.solo_inscritos for v in votaciones),
             'form': form,
             'en_borrador': en_borrador,
             # Qué le falta para programarse, para mostrarlo antes de intentarlo.
@@ -220,6 +234,19 @@ def edicion_gestionar(request, edicion_id):
     )
 
 
+def _pasos(edicion):
+    """Barra de pasos del ciclo de vida: hecho / actual / pendiente."""
+    orden = [e for e, _ in Edicion.ESTADOS]
+    actual = orden.index(edicion.estado)
+    return [
+        {
+            'nombre': nombre,
+            'estado': 'hecho' if i < actual else 'actual' if i == actual else 'pendiente',
+        }
+        for i, (_, nombre) in enumerate(Edicion.ESTADOS)
+    ]
+
+
 @requiere_permiso('votaciones.eliminar')
 def edicion_quitar_categoria(request, edicion_id, categoria_id):
     """Quita una categoría de la edición borrando sus votaciones.
@@ -230,7 +257,8 @@ def edicion_quitar_categoria(request, edicion_id, categoria_id):
     """
     edicion = get_object_or_404(Edicion, pk=edicion_id)
     categoria = get_object_or_404(Categoria, pk=categoria_id)
-    votaciones = list(edicion.votaciones.filter(categoria=categoria))
+    # Las rondas posteriores primero: una ronda no se borra antes que la que la sigue.
+    votaciones = list(edicion.votaciones.filter(categoria=categoria).order_by('-numero_ronda'))
     con_votos = [v for v in votaciones if v.total_votos > 0]
     volver = redirect('gestion:edicion_gestionar', edicion_id=edicion.id)
 
@@ -282,7 +310,11 @@ def edicion_eliminar(request, edicion_id):
     """ED3: solo en BORRADOR o PROGRAMADA y sin votos (nunca hubo votación)."""
     edicion = get_object_or_404(Edicion, pk=edicion_id)
     con_votos = [v for v in edicion.votaciones.all() if v.total_votos > 0]
-    bloqueada_por_estado = edicion.estado not in (Edicion.BORRADOR, Edicion.PROGRAMADA)
+    # Con discrepancias registradas hay historial de auditoría que conservar.
+    bloqueada_por_estado = (
+        edicion.estado not in (Edicion.BORRADOR, Edicion.PROGRAMADA)
+        or edicion.discrepancias.exists()
+    )
 
     if request.method == 'POST':
         if bloqueada_por_estado:
@@ -687,9 +719,9 @@ def _opciones_bloqueadas(request, votacion, accion):
 def opcion_lista(request, votacion_id):
     """OP1: opciones de la votación ordenadas por casilla, con votos."""
     votacion = get_object_or_404(
-        Votacion.objects.select_related('edicion', 'categoria'), pk=votacion_id
+        Votacion.objects.select_related('edicion', 'categoria', 'ronda_anterior'), pk=votacion_id
     )
-    en_borrador = votacion.estado == Votacion.BORRADOR
+    en_borrador = votacion.admite_opciones_nuevas
 
     return render(
         request,
@@ -715,10 +747,10 @@ def opcion_lista(request, votacion_id):
 def opcion_crear(request, votacion_id):
     """OP2: alta de opción con casilla única en la votación."""
     votacion = get_object_or_404(Votacion, pk=votacion_id)
-    if votacion.estado != Votacion.BORRADOR:
+    if not votacion.admite_opciones_nuevas:
         return _opciones_bloqueadas(request, votacion, 'agregar')
 
-    form = OpcionForm(data=request.POST or None, votacion=votacion)
+    form = OpcionForm(data=request.POST or None, files=request.FILES or None, votacion=votacion)
 
     if request.method == 'POST' and form.is_valid():
         opcion = form.save(commit=False)
@@ -747,7 +779,9 @@ def opcion_editar(request, votacion_id, opcion_id):
     if votacion.estado not in (Votacion.BORRADOR, Votacion.LISTA):
         return _opciones_bloqueadas(request, votacion, 'editar')
 
-    form = OpcionForm(data=request.POST or None, instance=opcion, votacion=votacion)
+    form = OpcionForm(
+        data=request.POST or None, files=request.FILES or None, instance=opcion, votacion=votacion
+    )
 
     if request.method == 'POST' and form.is_valid():
         form.save()
@@ -780,7 +814,7 @@ def opcion_eliminar(request, votacion_id, opcion_id):
                 f'{opcion.votos.count()} voto(s) y el conteo debe conservarse.',
             )
             return redirect('gestion:opcion_lista', votacion_id=votacion.id)
-        if votacion.estado != Votacion.BORRADOR:
+        if not votacion.admite_opciones_nuevas:
             return _opciones_bloqueadas(request, votacion, 'eliminar')
 
         nombre = opcion.nombre
@@ -794,3 +828,249 @@ def opcion_eliminar(request, votacion_id, opcion_id):
         'gestion/opcion_confirmar_borrar.html',
         {'votacion': votacion, 'opcion': opcion},
     )
+
+
+# --------------------------------------------------------------------------
+# Rondas: ronda siguiente, preparación tras repetición y empates
+# --------------------------------------------------------------------------
+
+@requiere_permiso('votaciones.crear')
+def ronda_siguiente_crear(request, votacion_id):
+    """Configura de antemano la ronda que sigue (segunda vuelta, final o repetición).
+
+    Solo con la edición en borrador: al programar, la estructura queda fija.
+    """
+    anterior = get_object_or_404(Votacion.objects.select_related('edicion', 'categoria'), pk=votacion_id)
+    volver = redirect('gestion:edicion_gestionar', edicion_id=anterior.edicion_id)
+    if not anterior.edicion.admite_cambios_de_estructura:
+        messages.error(request, 'Las rondas se configuran con la edición en BORRADOR.')
+        return volver
+    if not anterior.necesita_ronda_siguiente:
+        messages.error(
+            request,
+            f'«{anterior.nombre}» se decide por mayoría simple sin repetición: no lleva otra ronda.',
+        )
+        return volver
+    if Votacion.objects.filter(ronda_anterior=anterior).exists():
+        messages.info(request, f'«{anterior.nombre}» ya tiene su ronda siguiente.')
+        return volver
+
+    form = RondaSiguienteForm(data=request.POST or None, anterior=anterior)
+    if request.method == 'POST' and form.is_valid():
+        ronda = form.save(commit=False)
+        ronda.edicion = anterior.edicion
+        ronda.categoria = anterior.categoria
+        ronda.ronda_anterior = anterior
+        ronda.numero_ronda = anterior.numero_ronda + 1
+        ronda.estado = Votacion.BORRADOR
+        ronda.save()
+        registrar_evento(
+            request, 'votaciones', 'ronda_configurada',
+            {'id': ronda.id, 'anterior': anterior.id},
+        )
+        messages.success(
+            request,
+            f'Ronda «{ronda.nombre}» configurada. Recibirá sus candidatos al escrutar '
+            f'«{anterior.nombre}».',
+        )
+        return volver
+
+    return render(
+        request,
+        'gestion/ronda_form.html',
+        {'form': form, 'anterior': anterior, 'titulo': f'Ronda siguiente de «{anterior.nombre}»'},
+    )
+
+
+@requiere_permiso('votaciones.eliminar')
+def ronda_eliminar(request, votacion_id):
+    """Quita una ronda derivada (solo en borrador y si no alimenta otra)."""
+    ronda = get_object_or_404(Votacion, pk=votacion_id)
+    volver = redirect('gestion:edicion_gestionar', edicion_id=ronda.edicion_id)
+    if request.method == 'POST':
+        if not ronda.es_ronda_derivada or not ronda.edicion.admite_cambios_de_estructura:
+            messages.error(request, 'Solo se quita una ronda derivada con la edición en BORRADOR.')
+        elif Votacion.objects.filter(ronda_anterior=ronda).exists():
+            messages.error(request, f'«{ronda.nombre}» alimenta otra ronda: quita primero esa.')
+        else:
+            nombre = ronda.nombre
+            ronda.delete()
+            registrar_evento(request, 'votaciones', 'ronda_eliminada', {'id': votacion_id})
+            messages.success(request, f'Ronda «{nombre}» eliminada.')
+    return volver
+
+
+@requiere_permiso('votaciones.editar')
+def ronda_preparar(request, votacion_id):
+    """Tras una repetición: con los candidatos nuevos cargados, la ronda queda LISTA."""
+    ronda = get_object_or_404(Votacion.objects.select_related('edicion'), pk=votacion_id)
+    if request.method == 'POST':
+        try:
+            ciclo.preparar_ronda(ronda, request)
+        except ciclo.TransicionInvalida as error:
+            _informar_transicion_invalida(request, error)
+        else:
+            messages.success(request, f'Ronda «{ronda.nombre}» lista: se abrirá en su fecha.')
+    return redirect('gestion:edicion_gestionar', edicion_id=ronda.edicion_id)
+
+
+@requiere_permiso('votaciones.editar')
+def empate_resolver(request, votacion_id):
+    """El organizador decide un empate en el punto de corte (o una votación sin votos)."""
+    votacion = get_object_or_404(Votacion.objects.select_related('edicion', 'categoria'), pk=votacion_id)
+    volver = redirect('gestion:edicion_gestionar', edicion_id=votacion.edicion_id)
+    if votacion.resultado != Votacion.EMPATE or votacion.decision_empate:
+        messages.info(request, 'Esta votación no tiene un empate pendiente.')
+        return volver
+
+    necesarias = ciclo.cuantos_pasan(votacion)
+    form = EmpateForm(data=request.POST or None, votacion=votacion, necesarias=necesarias)
+    if request.method == 'POST' and form.is_valid():
+        try:
+            ciclo.resolver_empate(
+                votacion, list(form.cleaned_data['opciones']), form.cleaned_data['motivo'], request
+            )
+        except ciclo.TransicionInvalida as error:
+            _informar_transicion_invalida(request, error)
+        else:
+            messages.success(request, f'Empate de «{votacion.nombre}» resuelto.')
+            return volver
+
+    return render(
+        request,
+        'gestion/empate_form.html',
+        {
+            'votacion': votacion,
+            'form': form,
+            'conteo': ciclo.conteo(votacion),
+            'detalle': ciclo.calcular_resultado(votacion)['detalle'],
+            'necesarias': necesarias,
+        },
+    )
+
+
+# --------------------------------------------------------------------------
+# Inscripciones de una edición
+# --------------------------------------------------------------------------
+
+@requiere_permiso('inscripciones.gestionar')
+def inscritos(request, edicion_id):
+    """Lista de inscritos y carga por documentos."""
+    from back.apps.votacion.inscripciones import (
+        admite_inscripciones,
+        inscribir_por_documentos,
+    )
+
+    edicion = get_object_or_404(Edicion, pk=edicion_id)
+    form = InscripcionListaForm(data=request.POST or None)
+    informe = None
+    if request.method == 'POST' and form.is_valid():
+        if not admite_inscripciones(edicion, por_organizador=True):
+            messages.error(request, 'La edición ya no admite inscripciones.')
+        else:
+            informe = inscribir_por_documentos(request, edicion, form.cleaned_data['documentos'])
+            messages.success(request, f'{len(informe["inscritos"])} votante(s) inscrito(s).')
+            form = InscripcionListaForm()
+
+    return render(
+        request,
+        'gestion/inscritos.html',
+        {
+            'edicion': edicion,
+            'form': form,
+            'informe': informe,
+            'inscripciones': edicion.inscripciones.select_related(
+                'usuario__perfil_usuario', 'inscrito_por'
+            ),
+            'admite': admite_inscripciones(edicion, por_organizador=True),
+            'puede_retirar': edicion.estado in (Edicion.BORRADOR, Edicion.PROGRAMADA),
+        },
+    )
+
+
+@requiere_permiso('inscripciones.gestionar')
+def inscrito_retirar(request, edicion_id, inscripcion_id):
+    from back.apps.votacion.inscripciones import InscripcionNoPermitida, desinscribir
+
+    edicion = get_object_or_404(Edicion, pk=edicion_id)
+    inscripcion = get_object_or_404(edicion.inscripciones, pk=inscripcion_id)
+    if request.method == 'POST':
+        try:
+            desinscribir(request, edicion, inscripcion)
+        except InscripcionNoPermitida as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(request, 'Inscripción retirada.')
+    return redirect('gestion:inscritos', edicion_id=edicion.id)
+
+
+# --------------------------------------------------------------------------
+# Normativas (reglas) de una votación
+# --------------------------------------------------------------------------
+
+def _normativas_editables(votacion):
+    return not votacion.edicion.es_solo_lectura
+
+
+@requiere_permiso('votaciones.ver')
+def normativa_lista(request, votacion_id):
+    votacion = get_object_or_404(Votacion.objects.select_related('edicion', 'categoria'), pk=votacion_id)
+    return render(
+        request,
+        'gestion/normativa_lista.html',
+        {
+            'votacion': votacion,
+            'normativas': votacion.normativas.order_by('fecha_publicacion'),
+            'puede_editar': (
+                _normativas_editables(votacion) and tiene_permiso(request.user, 'votaciones.editar')
+            ),
+        },
+    )
+
+
+@requiere_permiso('votaciones.editar')
+def normativa_form(request, votacion_id, normativa_id=None):
+    votacion = get_object_or_404(Votacion, pk=votacion_id)
+    normativa = (
+        get_object_or_404(votacion.normativas, pk=normativa_id) if normativa_id else None
+    )
+    if not _normativas_editables(votacion):
+        messages.error(request, 'La edición está finalizada: sus normativas ya no cambian.')
+        return redirect('gestion:normativa_lista', votacion_id=votacion.id)
+
+    form = NormativaForm(data=request.POST or None, instance=normativa)
+    if request.method == 'POST' and form.is_valid():
+        nueva = form.save(commit=False)
+        nueva.votacion = votacion
+        nueva.save()
+        registrar_evento(
+            request, 'votaciones',
+            'normativa_actualizada' if normativa else 'normativa_creada',
+            {'id': nueva.id, 'votacion': votacion.id},
+        )
+        messages.success(request, f'Normativa «{nueva.titulo}» guardada.')
+        return redirect('gestion:normativa_lista', votacion_id=votacion.id)
+
+    return render(
+        request,
+        'gestion/normativa_form.html',
+        {
+            'form': form,
+            'votacion': votacion,
+            'titulo': f'Editar «{normativa.titulo}»' if normativa else 'Nueva normativa',
+        },
+    )
+
+
+@requiere_permiso('votaciones.editar')
+def normativa_eliminar(request, votacion_id, normativa_id):
+    votacion = get_object_or_404(Votacion, pk=votacion_id)
+    normativa = get_object_or_404(votacion.normativas, pk=normativa_id)
+    if request.method == 'POST' and _normativas_editables(votacion):
+        normativa.delete()
+        registrar_evento(
+            request, 'votaciones', 'normativa_eliminada',
+            {'id': normativa_id, 'votacion': votacion.id},
+        )
+        messages.success(request, 'Normativa eliminada.')
+    return redirect('gestion:normativa_lista', votacion_id=votacion.id)

@@ -126,14 +126,24 @@ EDICIONES = [
         'estado': 'PROGRAMADA',
         'votaciones': [
             {
+                # Preselección abierta al público: los 2 primeros pasan a la
+                # gran final, que solo votan los inscritos.
                 'categoria': 'Rey Vallenato',
-                'nombre': 'Rey Vallenato 2027',
-                'descripcion': 'Precandidatos inscritos para la edición 2027.',
+                'nombre': 'Preselección Rey Vallenato 2027',
+                'descripcion': 'Vota quién entra a la gran final. Abierta a todo el público.',
+                'regla': Votacion.CLASIFICAN_N,
+                'clasifican': 2,
+                'dias': 2,
                 'opciones': [
                     (1, 'Camilo Molina Daza', 'Acordeonero de Valledupar'),
                     (2, 'Rubén Lanao Ariza', 'Acordeonero de Patillal'),
                     (3, 'Hugo Carlos Granados', 'Acordeonero de Mariangola'),
                 ],
+                'ronda': {
+                    'nombre': 'Gran final Rey Vallenato 2027',
+                    'descripcion': 'Los 2 finalistas de la preselección. Solo para inscritos.',
+                    'modo': Votacion.INSCRITOS,
+                },
             },
             {
                 'categoria': 'Canción Inédita',
@@ -210,6 +220,8 @@ class Command(BaseCommand):
 
             for indice, datos in enumerate(datos_edicion['votaciones']):
                 apertura, cierre = _fechas(edicion.anio, estado, indice, ahora)
+                if 'dias' in datos:
+                    cierre = apertura + timedelta(days=datos['dias'])
                 votacion, _ = Votacion.objects.get_or_create(
                     edicion=edicion,
                     categoria=categorias[datos['categoria']],
@@ -219,9 +231,27 @@ class Command(BaseCommand):
                         'fecha_apertura': apertura,
                         'fecha_cierre': cierre,
                         'estado': ESTADO_VOTACION[estado],
-                        'mostrar_resultados_en_vivo': True,
+                        'regla_resultado': datos.get('regla', Votacion.MAYORIA_SIMPLE),
+                        'clasifican': datos.get('clasifican', 2),
                     },
                 )
+                ronda = datos.get('ronda')
+                if ronda:
+                    # Ronda siguiente: vacía, recibe a los clasificados al escrutar.
+                    Votacion.objects.get_or_create(
+                        ronda_anterior=votacion,
+                        defaults={
+                            'edicion': edicion,
+                            'categoria': votacion.categoria,
+                            'nombre': ronda['nombre'],
+                            'descripcion': ronda['descripcion'],
+                            'fecha_apertura': cierre + timedelta(hours=2),
+                            'fecha_cierre': fin - timedelta(hours=1),
+                            'modo_participacion': ronda['modo'],
+                            'numero_ronda': votacion.numero_ronda + 1,
+                            'estado': Votacion.BORRADOR,
+                        },
+                    )
 
                 for orden, nombre_op, subtitulo in datos['opciones']:
                     Opcion.objects.get_or_create(

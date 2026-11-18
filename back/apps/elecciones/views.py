@@ -211,6 +211,7 @@ def _opcion_publica(opcion):
         'subtitulo': opcion.subtitulo,
         'orden': opcion.orden,
         'es_voto_blanco': opcion.es_voto_blanco,
+        'foto': opcion.foto.url if opcion.foto else None,
     }
 
 
@@ -256,7 +257,8 @@ def categorias_publicas(request):
                 'abierta': votacion.esta_abierta,
                 'fecha_apertura': votacion.fecha_apertura,
                 'fecha_cierre': votacion.fecha_cierre,
-                'mostrar_resultados_en_vivo': votacion.mostrar_resultados_en_vivo,
+                'modo_participacion': votacion.modo_participacion,
+                'numero_ronda': votacion.numero_ronda,
                 'opciones': [_opcion_publica(op) for op in votacion.opciones.order_by('orden', 'nombre')],
             })
         if not edicion and not votaciones:
