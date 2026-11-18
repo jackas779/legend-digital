@@ -29,20 +29,18 @@ class PadronVotante(models.Model):
         related_name='padrones',
     )
     votacion = models.ForeignKey(Votacion, on_delete=models.CASCADE, related_name='padron')
+    # Obligatorias: con NULL la constraint uq_usuario_categoria_edicion no
+    # aplica (en SQL dos NULL no son iguales) y la regla quedaría sin efecto.
     edicion = models.ForeignKey(
         'elecciones.Edicion',
         on_delete=models.CASCADE,
         related_name='padrones',
-        null=True,
-        blank=True,
         help_text='Copia desnormalizada de la edición de la votación.',
     )
     categoria = models.ForeignKey(
         'elecciones.Categoria',
         on_delete=models.CASCADE,
         related_name='padrones',
-        null=True,
-        blank=True,
         help_text='Copia desnormalizada de la categoría de la votación.',
     )
     ha_votado = models.BooleanField(default=False)
@@ -66,6 +64,18 @@ class PadronVotante(models.Model):
 
     def __str__(self):
         return f'{self.usuario} → {self.votacion}'
+
+    def save(self, *args, **kwargs):
+        # La copia desnormalizada siempre se toma de la votación: nadie puede
+        # dejarla vacía ni apuntarla a otra edición o categoría.
+        if self.votacion_id:
+            votacion = self.votacion
+            self.edicion_id = votacion.edicion_id
+            self.categoria_id = votacion.categoria_id
+            campos = kwargs.get('update_fields')
+            if campos is not None:
+                kwargs['update_fields'] = set(campos) | {'edicion', 'categoria'}
+        super().save(*args, **kwargs)
 
 
 class Voto(models.Model):
@@ -124,6 +134,13 @@ class CertificadoVotacion(models.Model):
 
 
 class ActaEscrutinio(models.Model):
+    """Acta de una votación CERRADA: su generación la deja ESCRUTADA.
+
+    ``hash_sello_bd`` sella el contenido de la urna al momento del
+    escrutinio (firmas de los votos + totales); el auditor puede rehacerlo
+    para detectar votos agregados o alterados después del acta.
+    """
+
     votacion = models.OneToOneField(
         Votacion,
         on_delete=models.CASCADE,
@@ -133,7 +150,7 @@ class ActaEscrutinio(models.Model):
     total_padron_habilitado = models.PositiveIntegerField()
     total_participantes = models.PositiveIntegerField()
     total_votos_urna = models.PositiveIntegerField()
-    archivo_pdf_url = models.URLField()
+    archivo_pdf_url = models.URLField(blank=True, default='')
     hash_sello_bd = models.CharField(max_length=256)
 
     class Meta:

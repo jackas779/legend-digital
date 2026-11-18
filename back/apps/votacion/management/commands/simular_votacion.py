@@ -56,6 +56,18 @@ def pesos_opciones(opciones, semilla):
     return pesos
 
 
+def _momento_historico(votacion, user):
+    """Instante dentro de la ventana de la votación, fijo para cada votante.
+
+    Se usa al poblar votaciones ya CERRADAS (ediciones anteriores de la
+    demo): sus votos deben quedar fechados dentro de su horario, o el
+    auditor los vería como "fuera de horario".
+    """
+    ventana = votacion.fecha_cierre - votacion.fecha_apertura
+    fraccion = ((user.pk or 0) * 37 % 97 + 1) / 99
+    return votacion.fecha_apertura + ventana * fraccion
+
+
 def emitir_voto(user, opcion):
     """Emite el voto de ``user`` por ``opcion`` y marca su padrón.
 
@@ -76,6 +88,15 @@ def emitir_voto(user, opcion):
             if padron.ha_votado:
                 return False
             voto = Voto.objects.create(opcion=opcion)
+            if votacion.estado == Votacion.CERRADA:
+                # Carga histórica: se fecha dentro de la ventana y se vuelve
+                # a firmar con esa fecha para que la firma siga verificable.
+                voto.fecha_registro = _momento_historico(votacion, user)
+                voto.firma_criptografica = voto.calcular_firma()
+                Voto.objects.filter(pk=voto.pk).update(
+                    fecha_registro=voto.fecha_registro,
+                    firma_criptografica=voto.firma_criptografica,
+                )
             padron.ha_votado = True
             padron.hash_comprobante = voto.firma_criptografica
             padron.save(update_fields=['ha_votado', 'hash_comprobante'])
@@ -104,7 +125,7 @@ class Command(BaseCommand):
             '--votacion',
             type=int,
             default=None,
-            help='Id de la votación; por defecto se usa la primera ACTIVA.',
+            help='Id de la votación; por defecto se usa la primera ABIERTA.',
         )
         parser.add_argument(
             '--participacion',
@@ -116,7 +137,8 @@ class Command(BaseCommand):
             '--todas',
             action='store_true',
             help=(
-                'Simula en todas las votaciones ACTIVAS. Si una categoría tiene '
+                'Simula en todas las votaciones ABIERTAS (y en las CERRADAS '
+                'pendientes de escrutinio). Si una categoría tiene '
                 'varias votaciones en la edición, reparte a los votantes entre '
                 'ellas (un voto por categoría).'
             ),
@@ -132,7 +154,7 @@ class Command(BaseCommand):
         votacion = self._obtener_votacion(options['votacion'])
         if votacion is None:
             raise CommandError(
-                'No hay votaciones ACTIVAS para simular; ejecuta '
+                'No hay votaciones ABIERTAS para simular; ejecuta '
                 'cargar_demo primero (python manage.py preparar).'
             )
 
@@ -177,16 +199,17 @@ class Command(BaseCommand):
         )
 
     def _simular_todas(self, total_votantes, participacion):
-        """Simula en cada votación activa respetando un voto por categoría."""
-        # También las FINALIZADAS: así las ediciones anteriores tienen resultados.
+        """Simula en cada votación abierta respetando un voto por categoría."""
+        # También las CERRADAS pendientes de escrutinio: así las ediciones
+        # anteriores tienen resultados antes de generar sus actas.
         votaciones = list(
-            Votacion.objects.filter(estado__in=['ACTIVA', 'FINALIZADA'])
+            Votacion.objects.filter(estado__in=[Votacion.ABIERTA, Votacion.CERRADA])
             .select_related('edicion', 'categoria')
             .order_by('edicion_id', 'categoria_id', 'id')
         )
         if not votaciones:
             raise CommandError(
-                'No hay votaciones ACTIVAS para simular; ejecuta '
+                'No hay votaciones ABIERTAS para simular; ejecuta '
                 'python manage.py preparar.'
             )
 
@@ -256,7 +279,7 @@ class Command(BaseCommand):
             return Votacion.objects.filter(pk=id_votacion).first()
         return (
             Votacion.objects
-            .filter(estado='ACTIVA')
+            .filter(estado=Votacion.ABIERTA)
             .order_by('id')
             .first()
         )

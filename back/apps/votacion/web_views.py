@@ -45,13 +45,11 @@ def inicio(request):
             votos_por_edicion.setdefault(edicion_id, set()).add(categoria_id)
 
     for edicion in ediciones:
-        votaciones = list(edicion.votaciones.all())
+        votaciones = [v for v in edicion.votaciones.all() if v.estado != Votacion.CANCELADA]
         aperturas = [v.fecha_apertura for v in votaciones]
-        cierres = [v.fecha_cierre for v in votaciones]
         edicion.num_votaciones = len(votaciones)
         edicion.num_abiertas = sum(1 for v in votaciones if v.esta_abierta)
-        edicion.fecha_inicio = min(aperturas) if aperturas else None
-        edicion.fecha_fin = max(cierres) if cierres else None
+        # El periodo es el de la propia edición (fecha_inicio/fecha_fin).
         edicion.ultima_apertura = max(aperturas) if aperturas else None
 
         nombres = sorted({v.categoria.nombre for v in votaciones})
@@ -105,7 +103,7 @@ def _lideres_en_vivo(edicion):
     lideres = []
     votaciones = (
         edicion.votaciones
-        .filter(mostrar_resultados_en_vivo=True, estado='ACTIVA')
+        .filter(mostrar_resultados_en_vivo=True, estado=Votacion.ABIERTA)
         .select_related('categoria')
         .order_by('categoria__nombre')
     )
@@ -158,11 +156,13 @@ def edicion_detalle(request, pk):
             fila[0]: fila[2] for fila in filas if fila[2]
         }
 
-    # Datos de contexto para el encabezado y las tarjetas.
-    cierres = [v.fecha_cierre for v in votaciones]
+    # Datos de contexto para el encabezado y las tarjetas. Las votaciones
+    # canceladas se muestran (son historia) pero no cuentan como categoría
+    # pendiente de voto.
     edicion.num_abiertas = sum(1 for v in votaciones if v.esta_abierta)
-    edicion.fecha_fin = max(cierres) if cierres else None
-    edicion.num_categorias = len({v.categoria_id for v in votaciones})
+    edicion.num_categorias = len(
+        {v.categoria_id for v in votaciones if v.estado != Votacion.CANCELADA}
+    )
     for votacion in votaciones:
         votacion.mi_comprobante = comprobantes.get(votacion.pk)
 
@@ -321,7 +321,7 @@ def resultados(request, pk):
     """Resultados por opción, con conteo y porcentaje.
 
     R2 (regla de visibilidad): se ven si la votación los muestra en vivo,
-    si ya está FINALIZADA o si se tiene el permiso ``resultados.ver``.
+    si ya está cerrada o escrutada, o si se tiene el permiso ``resultados.ver``.
     """
     votacion = get_object_or_404(
         Votacion.objects.select_related('edicion', 'categoria'),
@@ -330,7 +330,7 @@ def resultados(request, pk):
 
     visible = (
         votacion.mostrar_resultados_en_vivo
-        or votacion.estado == 'FINALIZADA'
+        or votacion.tiene_resultado_final
         or tiene_permiso(request.user, 'resultados.ver')
     )
 
