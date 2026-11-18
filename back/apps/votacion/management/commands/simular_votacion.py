@@ -6,6 +6,7 @@ votantes se reconocen por su documento y nadie vota dos veces.
 """
 
 from collections import defaultdict
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
@@ -15,7 +16,13 @@ from django.db import transaction
 from back.apps.auditoria.servicio import registrar_evento
 from back.apps.elecciones.models import Votacion
 from back.apps.usuarios.models import Role, Usuario
-from back.apps.votacion.models import PadronVotante, Voto
+from back.apps.votacion.models import (
+    InscripcionEdicion,
+    PadronVotante,
+    Voto,
+    nuevo_comprobante,
+    truncar_a_hora,
+)
 
 CLAVE_DEMO = 'voto123'
 
@@ -77,6 +84,15 @@ def emitir_voto(user, opcion):
     votacion = opcion.votacion
     try:
         with transaction.atomic():
+            if votacion.solo_inscritos:
+                # Demo: el votante quedó inscrito antes de que la votación abriera.
+                inscripcion, _ = InscripcionEdicion.objects.get_or_create(
+                    edicion_id=votacion.edicion_id, usuario=user
+                )
+                if inscripcion.fecha_inscripcion >= votacion.fecha_apertura:
+                    InscripcionEdicion.objects.filter(pk=inscripcion.pk).update(
+                        fecha_inscripcion=votacion.fecha_apertura - timedelta(days=1)
+                    )
             padron, _ = PadronVotante.objects.get_or_create(
                 usuario=user,
                 votacion=votacion,
@@ -89,16 +105,16 @@ def emitir_voto(user, opcion):
                 return False
             voto = Voto.objects.create(opcion=opcion)
             if votacion.estado == Votacion.CERRADA:
-                # Carga histórica: se fecha dentro de la ventana y se vuelve
-                # a firmar con esa fecha para que la firma siga verificable.
-                voto.fecha_registro = _momento_historico(votacion, user)
+                # Carga histórica: se fecha dentro de la ventana (redondeada
+                # a la hora, como todo voto) y se vuelve a firmar.
+                voto.fecha_registro = truncar_a_hora(_momento_historico(votacion, user))
                 voto.firma_criptografica = voto.calcular_firma()
                 Voto.objects.filter(pk=voto.pk).update(
                     fecha_registro=voto.fecha_registro,
                     firma_criptografica=voto.firma_criptografica,
                 )
             padron.ha_votado = True
-            padron.hash_comprobante = voto.firma_criptografica
+            padron.hash_comprobante = nuevo_comprobante()
             padron.save(update_fields=['ha_votado', 'hash_comprobante'])
     except Exception:
         return False  # No interrumpe la carga por un usuario puntual.
@@ -221,10 +237,10 @@ class Command(BaseCommand):
 
         grupos = defaultdict(list)
         for votacion in votaciones:
-            grupos[(votacion.edicion_id, votacion.categoria_id)].append(votacion)
+            grupos[(votacion.edicion_id, votacion.categoria_id, votacion.numero_ronda)].append(votacion)
 
         total_nuevos = 0
-        for (edicion_id, categoria_id), lista in grupos.items():
+        for (edicion_id, categoria_id, ronda), lista in grupos.items():
             for posicion, votacion in enumerate(lista):
                 opciones = list(votacion.opciones.order_by('orden', 'nombre'))
                 if not opciones:
@@ -233,7 +249,7 @@ class Command(BaseCommand):
                 # categoría no puede entrar en esta (regla de unicidad).
                 ocupados = set(
                     PadronVotante.objects.filter(
-                        edicion_id=edicion_id, categoria_id=categoria_id
+                        edicion_id=edicion_id, categoria_id=categoria_id, ronda=ronda
                     )
                     .exclude(votacion=votacion)
                     .values_list('usuario_id', flat=True)

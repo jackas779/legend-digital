@@ -5,6 +5,7 @@ from back.apps.usuarios.permisos import AdminSoloLecturaMixin
 from .models import (
     ActaEscrutinio,
     CertificadoVotacion,
+    InscripcionEdicion,
     PadronVotante,
     Voto,
 )
@@ -16,6 +17,16 @@ class PadronVotanteAdmin(AdminSoloLecturaMixin, admin.ModelAdmin):
     list_display = ('usuario', 'votacion', 'ha_votado', 'fecha_emision')
     list_filter = ('ha_votado', 'votacion')
     search_fields = ('usuario__username', 'usuario__email')
+
+
+@admin.register(InscripcionEdicion)
+class InscripcionEdicionAdmin(AdminSoloLecturaMixin, admin.ModelAdmin):
+    """Se inscribe desde la web (votante u organizador), no desde el panel."""
+
+    codigo_ver = 'inscripciones.gestionar'
+    list_display = ('usuario', 'edicion', 'origen', 'fecha_inscripcion')
+    list_filter = ('edicion', 'origen')
+    search_fields = ('usuario__username',)
 
 
 @admin.register(Voto)
