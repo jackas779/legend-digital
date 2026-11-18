@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+
+{% block title %}Sin permiso — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <div class="panel-form">
+    <h1>No tienes permiso para esta sección</h1>
+    {% if codigo %}
+      <p class="lead">Se necesita el permiso <strong>{{ descripcion }}</strong>
+        (<code>{{ codigo }}</code>){% if rol_actual %}, y tu rol ({{ rol_actual }}) no lo tiene{% endif %}.</p>
+      <p class="meta">Los permisos de cada rol los asigna el administrador.</p>
+    {% endif %}
+    <div class="acciones-form">
+      {% if anterior %}<a class="button" href="{{ anterior }}">Volver</a>{% endif %}
+      <a class="button ghost" href="{% url 'inicio' %}">Ir al inicio</a>
+    </div>
+  </div>
+{% endblock %}
