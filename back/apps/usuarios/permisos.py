@@ -156,6 +156,33 @@ def tiene_permiso(user, codigo) -> bool:
     return codigo in permisos_del_usuario(user)
 
 
+ROL_ADMINISTRADOR = 'Administrador'
+ROL_VOTANTE = 'Votante'
+
+
+def es_administrador(user) -> bool:
+    """Superusuario o perfil con rol Administrador."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    perfil = getattr(user, 'perfil_usuario', None)
+    return getattr(getattr(perfil, 'rol', None), 'nombre', None) == ROL_ADMINISTRADOR
+
+
+def puede_asignar_rol(user, rol) -> bool:
+    """Quién puede dar un rol a una cuenta.
+
+    - Votante (o sin rol): cualquiera; es el alta pública.
+    - Cualquier otro rol (Administrador, Organizador, Auditor...): solo un
+      administrador, para evitar la escalada de privilegios.
+    """
+    nombre = getattr(rol, 'nombre', None)
+    if nombre in (None, ROL_VOTANTE):
+        return True
+    return es_administrador(user)
+
+
 def sin_permiso(request, codigo):
     """Página 403 legible: qué permiso falta, quién lo asigna y cómo volver."""
     from django.template.loader import render_to_string

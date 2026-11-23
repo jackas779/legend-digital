@@ -1,8 +1,10 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from rest_framework.exceptions import PermissionDenied
 
 from .auth import autenticar
 from .models import Permission, Role, RolPermiso, Usuario
+from .permisos import puede_asignar_rol
 from .services import crear_cuenta, validar_cuenta_libre, validar_password
 
 User = get_user_model()
@@ -47,11 +49,24 @@ class RegisterSerializer(serializers.Serializer):
         if mensajes:
             raise serializers.ValidationError({'password': mensajes})
 
+        # El rol nunca lo elige quien se registra: sin rol_id es Votante, y
+        # pedir otro exige que quien hace la petición pueda asignarlo.
+        rol_id = attrs.pop('rol_id', None)
+        rol = None
+        if rol_id:
+            rol = Role.objects.filter(id=rol_id).first()
+            if rol is None:
+                raise serializers.ValidationError({'rol_id': 'El rol no existe.'})
+            request = self.context.get('request')
+            if not puede_asignar_rol(getattr(request, 'user', None), rol):
+                raise PermissionDenied(
+                    f'No tienes permiso para crear cuentas con rol {rol.nombre}.'
+                )
+        attrs['rol'] = rol
         return attrs
 
     def create(self, validated_data):
-        rol_id = validated_data.pop('rol_id', None)
-        rol = Role.objects.filter(id=rol_id).first() if rol_id else None
+        rol = validated_data.pop('rol', None)
 
         user, perfil = crear_cuenta(
             documento=validated_data['documento'],

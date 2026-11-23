@@ -19,7 +19,6 @@ class AuthFlowTests(TestCase):
             'apellidos': 'Rentería',
             'correo': 'cardina@test.com',
             'password': 'voto1234',
-            'rol_id': 1,
         }
 
         response = self.client.post(reverse('register'), payload, format='json')
@@ -834,3 +833,101 @@ class PermisosTests(TestCase):
             )
         )
 
+
+
+class AsignacionDeRolTests(TestCase):
+    """Solo un administrador crea cuentas con rol Administrador."""
+
+    def setUp(self):
+        from back.apps.usuarios.models import Role
+        from back.apps.usuarios.services import crear_cuenta
+
+        cache.clear()
+        self.client = APIClient()
+        self.rol_admin = Role.objects.create(nombre='Administrador')
+        self.rol_org = Role.objects.create(nombre='Organizador')
+        self.rol_votante = Role.objects.create(nombre='Votante')
+        self.admin, _ = crear_cuenta(
+            documento='900', nombres='Ana', apellidos='Admin',
+            correo='admin@test.com', password='clave-segura-2026', rol=self.rol_admin,
+        )
+        self.organizador, _ = crear_cuenta(
+            documento='901', nombres='Oscar', apellidos='Org',
+            correo='org@test.com', password='clave-segura-2026', rol=self.rol_org,
+        )
+
+    def _payload(self, **extra):
+        datos = {
+            'documento': '1015488962',
+            'nombres': 'Cardina',
+            'apellidos': 'Rentería',
+            'correo': 'cardina@test.com',
+            'password': 'clave-segura-2026',
+        }
+        datos.update(extra)
+        return datos
+
+    def _perfil_creado(self):
+        from back.apps.usuarios.models import Usuario
+        return Usuario.objects.filter(documento='1015488962').select_related('rol').first()
+
+    def test_registro_publico_sin_rol_queda_como_votante(self):
+        respuesta = self.client.post(reverse('register'), self._payload(), format='json')
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertEqual(self._perfil_creado().rol.nombre, 'Votante')
+
+    def test_anonimo_no_puede_registrarse_como_administrador(self):
+        respuesta = self.client.post(
+            reverse('register'), self._payload(rol_id=self.rol_admin.id), format='json'
+        )
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertIsNone(self._perfil_creado())
+
+    def test_anonimo_no_puede_registrarse_con_otro_rol(self):
+        respuesta = self.client.post(
+            reverse('register'), self._payload(rol_id=self.rol_org.id), format='json'
+        )
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertIsNone(self._perfil_creado())
+
+    def test_organizador_no_puede_crear_administradores(self):
+        self.client.force_authenticate(self.organizador)
+        respuesta = self.client.post(
+            reverse('register'), self._payload(rol_id=self.rol_admin.id), format='json'
+        )
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertIsNone(self._perfil_creado())
+
+    def test_administrador_puede_crear_otro_administrador(self):
+        self.client.force_authenticate(self.admin)
+        respuesta = self.client.post(
+            reverse('register'), self._payload(rol_id=self.rol_admin.id), format='json'
+        )
+        self.assertEqual(respuesta.status_code, 201)
+        self.assertEqual(self._perfil_creado().rol.nombre, 'Administrador')
+
+    def test_rol_inexistente_se_rechaza(self):
+        self.client.force_authenticate(self.admin)
+        respuesta = self.client.post(
+            reverse('register'), self._payload(rol_id=9999), format='json'
+        )
+        self.assertEqual(respuesta.status_code, 400)
+
+    def test_puede_asignar_rol(self):
+        from back.apps.usuarios.permisos import puede_asignar_rol
+
+        self.assertTrue(puede_asignar_rol(self.admin, self.rol_admin))
+        self.assertTrue(puede_asignar_rol(self.admin, self.rol_org))
+        self.assertFalse(puede_asignar_rol(self.organizador, self.rol_admin))
+        self.assertFalse(puede_asignar_rol(self.organizador, self.rol_org))
+        self.assertTrue(puede_asignar_rol(self.organizador, self.rol_votante))
+
+    def test_registro_web_siempre_crea_votante(self):
+        respuesta = self.client.post(reverse('registro'), {
+            **self._payload(),
+            'password_confirm': 'clave-segura-2026',
+            'rol_id': self.rol_admin.id,
+            'rol': self.rol_admin.id,
+        })
+        self.assertEqual(respuesta.status_code, 302)
+        self.assertEqual(self._perfil_creado().rol.nombre, 'Votante')
