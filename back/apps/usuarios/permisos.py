@@ -30,13 +30,32 @@ def catalogo():
     return catalogo
 
 
+# Códigos fuera del CRUD: lectura y el flujo de discrepancias.
+#  - discrepancias.reportar: registrar hallazgos y verificar su resolución
+#    (confirmar o reabrir). Es del auditor.
+#  - discrepancias.resolver: resolver o descartar. Es del organizador; si su
+#    rol no lo tiene, la discrepancia pasa al administrador.
+#  - resultados.ver: resultados en vivo (antes del cierre). El votante no lo
+#    tiene: verlos podría influir en quien todavía no vota.
+#  - inscripciones.gestionar: inscribir votantes a una edición por lista.
+CODIGOS_ESPECIALES = {
+    'resultados.ver': 'Consultar resultados en vivo',
+    'inscripciones.gestionar': 'Inscribir votantes a una edición',
+    'padron.ver': 'Consultar padrón',
+    'auditoria.ver': 'Consultar auditoría',
+    'discrepancias.ver': 'Consultar discrepancias',
+    'discrepancias.reportar': 'Reportar y verificar discrepancias',
+    'discrepancias.resolver': 'Resolver discrepancias',
+}
+
+
 def codigos_del_catalogo():
     """Todos los códigos del catálogo, más la aplanación por rol."""
     return [
         codigo
         for modulo in catalogo().values()
         for codigo, _ in modulo
-    ] + ['resultados.ver', 'padron.ver', 'auditoria.ver']
+    ] + list(CODIGOS_ESPECIALES)
 
 
 # Asignación por rol (tabla del plan, bloque 3).
@@ -45,15 +64,75 @@ PERMISOS_POR_ROL = {
         f'{modulo}.{accion}'
         for modulo in MODULOS_CRUD
         for accion in ('ver', 'crear', 'editar', 'eliminar')
-    ] + ['auditoria.ver'],
+    ] + [
+        'auditoria.ver',
+        'discrepancias.ver',
+        'discrepancias.resolver',
+        'resultados.ver',
+        'inscripciones.gestionar',
+    ],
     'Organizador': [
         f'{modulo}.{accion}'
         for modulo in MODULOS_CRUD[:-1]
         for accion in ('ver', 'crear', 'editar', 'eliminar')
-    ] + ['resultados.ver', 'padron.ver'],
-    'Votante': ['resultados.ver'],
-    'Auditor': ['resultados.ver', 'padron.ver', 'auditoria.ver'],
+    ] + [
+        'resultados.ver',
+        'padron.ver',
+        'discrepancias.ver',
+        'discrepancias.resolver',
+        'inscripciones.gestionar',
+    ],
+    'Votante': [],
+    'Auditor': [
+        'resultados.ver',
+        'padron.ver',
+        'auditoria.ver',
+        'discrepancias.ver',
+        'discrepancias.reportar',
+    ],
 }
+
+
+def sincronizar_catalogo(crear_roles=False):
+    """Crea los códigos que falten y asigna a cada rol los de PERMISOS_POR_ROL.
+
+    Solo agrega, nunca quita: respeta lo que un administrador haya ajustado
+    a mano (por ejemplo, quitarle ``discrepancias.resolver`` al organizador).
+    Con ``crear_roles=False`` (el caso de ``migrate``) solo toca roles que ya
+    existen. Devuelve (códigos creados, asignaciones creadas).
+    """
+    from django.db import transaction
+
+    from back.apps.usuarios.models import Permission, Role
+
+    creados = asignados = 0
+    with transaction.atomic():
+        descripciones = {
+            codigo: descripcion
+            for definiciones in catalogo().values()
+            for codigo, descripcion in definiciones
+        }
+        descripciones.update(CODIGOS_ESPECIALES)
+        for codigo, descripcion in descripciones.items():
+            _, nuevo = Permission.objects.get_or_create(
+                codigo=codigo,
+                defaults={'modulo': codigo.split('.')[0], 'descripcion': descripcion},
+            )
+            creados += nuevo
+
+        for nombre_rol, codigos in PERMISOS_POR_ROL.items():
+            if crear_roles:
+                rol, _ = Role.objects.get_or_create(nombre=nombre_rol)
+            else:
+                rol = Role.objects.filter(nombre=nombre_rol).first()
+                if rol is None:
+                    continue
+            for codigo in codigos:
+                _, nuevo = RolPermiso.objects.get_or_create(
+                    rol=rol, permiso=Permission.objects.get(codigo=codigo)
+                )
+                asignados += nuevo
+    return creados, asignados
 
 
 def permisos_del_usuario(user):
@@ -77,10 +156,29 @@ def tiene_permiso(user, codigo) -> bool:
     return codigo in permisos_del_usuario(user)
 
 
+def sin_permiso(request, codigo):
+    """Página 403 legible: qué permiso falta, quién lo asigna y cómo volver."""
+    from django.template.loader import render_to_string
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    anterior = request.META.get('HTTP_REFERER', '')
+    if not url_has_allowed_host_and_scheme(anterior, allowed_hosts={request.get_host()}):
+        anterior = ''
+    descripcion = CODIGOS_ESPECIALES.get(codigo) or dict(
+        par for definiciones in catalogo().values() for par in definiciones
+    ).get(codigo, codigo)
+    return HttpResponseForbidden(render_to_string(
+        '403.html',
+        {'codigo': codigo, 'descripcion': descripcion, 'anterior': anterior},
+        request=request,
+    ))
+
+
 def requiere_permiso(codigo):
     """P4: decorador para vistas MVT.
 
-    Anónimo: redirección al login con ``next``. Autenticado sin permiso: 403.
+    Anónimo: redirección al login con ``next``. Autenticado sin permiso: 403
+    con una página que dice qué permiso falta y cómo volver.
     """
 
     def decorador(vista):
@@ -89,7 +187,7 @@ def requiere_permiso(codigo):
             if not request.user.is_authenticated:
                 return redirect_to_login(request.get_full_path())
             if not tiene_permiso(request.user, codigo):
-                return HttpResponseForbidden('No tienes permiso para esta sección.')
+                return sin_permiso(request, codigo)
             return vista(request, *args, **kwargs)
 
         return envoltura

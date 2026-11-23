@@ -9,17 +9,17 @@
     <div class="hero-texto">
       <span class="kicker">{{ edicion.get_estado_display }}{% if edicion.fecha_fin %} · hasta el {{ edicion.fecha_fin|date:"j b Y" }}{% endif %}</span>
       <h1>{{ edicion }}</h1>
-      <p class="lead">Tienes <strong>un solo voto por categoría</strong>. Si una categoría
-        tiene varias votaciones, votar en una bloquea las demás.</p>
+      <p class="lead">Tienes <strong>un solo voto por categoría</strong> en cada ronda. Si una
+        categoría tiene varias votaciones a la vez, votar en una bloquea las demás.</p>
 
       {% if rol_actual == 'Votante' and edicion.num_categorias %}
         <div class="progreso">
           <div class="texto">
             <span>Tu progreso</span>
-            <span>{{ ids_categorias_votadas|length }} de {{ edicion.num_categorias }} categoría{{ edicion.num_categorias|pluralize }}</span>
+            <span>{{ num_turnos_votados }} de {{ edicion.num_categorias }} votaci{{ edicion.num_categorias|pluralize:"ón,ones" }}</span>
           </div>
-          <div class="pista" role="img" aria-label="Votaste en {{ ids_categorias_votadas|length }} de {{ edicion.num_categorias }} categorías">
-            <span style="width:{% widthratio ids_categorias_votadas|length edicion.num_categorias 100 %}%"></span>
+          <div class="pista" role="img" aria-label="Votaste en {{ num_turnos_votados }} de {{ edicion.num_categorias }}">
+            <span style="width:{% widthratio num_turnos_votados edicion.num_categorias 100 %}%"></span>
           </div>
         </div>
       {% endif %}
@@ -32,15 +32,28 @@
     {% endif %}
   </header>
 
+  {% if inscripcion.aplica and rol_actual == 'Votante' %}
+    {% if inscripcion.inscrito %}
+      <p class="msg success">Estás inscrito en esta edición: puedes votar en las votaciones
+        «solo inscritos» que abran después de tu inscripción.</p>
+    {% elif inscripcion.puede %}
+      <div class="msg info">
+        <p>Algunas votaciones de esta edición son <strong>solo para inscritos</strong>: solo
+          votan quienes se inscribieron antes de que abran.</p>
+        <form method="post" action="{% url 'inscribirse' edicion.pk %}">
+          {% csrf_token %}
+          <button type="submit">Inscribirme a esta edición</button>
+        </form>
+      </div>
+    {% endif %}
+  {% endif %}
+
   {% regroup votaciones by categoria as grupos %}
   <div class="categorias-grid">
   {% for grupo in grupos %}
     <section class="grupo-categoria">
       <div class="grupo-head">
         <h2>{{ grupo.grouper }}</h2>
-        {% if grupo.grouper.id in ids_categorias_votadas %}
-          <span class="badge votada">Ya votaste aquí</span>
-        {% endif %}
       </div>
       {% if grupo.grouper.descripcion %}
         <p class="desc">{{ grupo.grouper.descripcion }}</p>
@@ -48,25 +61,29 @@
 
       <div class="lista-votaciones">
         {% for votacion in grupo.list %}
-          <article class="card tarjeta">
+          <article class="card tarjeta{% if votacion.es_ronda_derivada %} ronda-derivada{% endif %}">
             <div class="tarjeta-titulo">
-              <strong>{{ votacion.nombre }}</strong>
+              <strong>{% if votacion.numero_ronda > 1 %}<span class="meta">Ronda {{ votacion.numero_ronda }} ·</span> {% endif %}{{ votacion.nombre }}</strong>
               {% if votacion.id in ids_votaciones_votadas %}
                 <span class="badge votada">Tu voto</span>
-              {% elif votacion.categoria_id in ids_categorias_votadas %}
+              {% elif votacion.bloqueada %}
               {% elif votacion.esta_abierta %}
                 <span class="badge activa">Abierta</span>
               {% else %}
                 <span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span>
               {% endif %}
             </div>
+            {% if votacion.solo_inscritos %}<div class="etiquetas"><span class="chip">Solo inscritos</span></div>{% endif %}
             {% if votacion.descripcion %}
               <div class="meta">{{ votacion.descripcion }}</div>
             {% endif %}
             <div class="meta">
               {{ votacion.opciones.count }} opci{{ votacion.opciones.count|pluralize:"ón,ones" }}
-              {% if votacion.esta_abierta %}· cierra el {{ votacion.fecha_cierre|date:"j b, H:i" }}{% endif %}
+              {% if votacion.esta_abierta %}· <span class="cuenta-regresiva" data-hasta="{{ votacion.fecha_cierre|date:'c' }}" data-prefijo="cierra en" data-final="cerrada">cierra el {{ votacion.fecha_cierre|date:"j b, H:i" }}</span>{% endif %}
             </div>
+            {% if votacion.es_ronda_derivada and votacion.estado == 'BORRADOR' %}
+              <p class="meta">Sus candidatos salen del resultado de «{{ votacion.ronda_anterior.nombre }}».</p>
+            {% endif %}
 
             <div class="cta">
               {% if votacion.id in ids_votaciones_votadas %}
@@ -75,18 +92,25 @@
                 {% else %}
                   <a class="enlace" href="{% url 'tarjeton' votacion.pk %}">Ver detalles</a>
                 {% endif %}
-              {% elif votacion.categoria_id in ids_categorias_votadas %}
-                <span class="nota">Ya usaste tu voto de esta categoría</span>
+              {% elif votacion.bloqueada %}
+                <span class="nota">Ya usaste tu voto de esta categoría{% if votacion.numero_ronda > 1 %} en esta ronda{% endif %}</span>
               {% elif votacion.esta_abierta %}
                 {% if user.is_authenticated and rol_actual != 'Votante' %}
+                  <a class="enlace" href="{% url 'tarjeton' votacion.pk %}">Ver opciones</a>
+                {% elif not votacion.elegible %}
+                  <span class="nota">Solo para inscritos antes de su apertura</span>
                   <a class="enlace" href="{% url 'tarjeton' votacion.pk %}">Ver opciones</a>
                 {% else %}
                   <a class="button ancho" href="{% url 'tarjeton' votacion.pk %}">Votar</a>
                 {% endif %}
-              {% elif votacion.estado == 'ACTIVA' %}
+              {% elif votacion.estado == 'ABIERTA' %}
                 <span class="nota">Fuera del periodo de votación</span>
-              {% elif votacion.estado == 'PROGRAMADA' or votacion.estado == 'BORRADOR' %}
+              {% elif votacion.estado == 'LISTA' %}
+                <span class="nota"><span class="cuenta-regresiva" data-hasta="{{ votacion.fecha_apertura|date:'c' }}" data-prefijo="Abre en" data-final="Abriendo…">Abre el {{ votacion.fecha_apertura|date:"j b, H:i" }}</span></span>
+              {% elif votacion.estado == 'BORRADOR' %}
                 <span class="nota">Aún no está disponible</span>
+              {% elif votacion.estado == 'CANCELADA' %}
+                <span class="nota">Cancelada: no llegó a abrirse</span>
               {% else %}
                 <a class="enlace" href="{% url 'resultados' votacion.pk %}">Ver resultados</a>
               {% endif %}

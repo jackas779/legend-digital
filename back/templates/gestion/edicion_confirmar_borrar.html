@@ -7,7 +7,13 @@
     <h1>Eliminar edición</h1>
     <p class="lead">¿Confirmas eliminar {{ objeto }}?</p>
 
-    {% if con_votos %}
+    {% if bloqueada_por_estado %}
+      <p class="msg error">
+        La edición está {{ objeto.get_estado_display|upper }}: solo se eliminan ediciones en
+        borrador o programadas. Su historial se conserva.
+      </p>
+      <a href="{% url 'gestion:ediciones' %}" class="button">Volver</a>
+    {% elif con_votos %}
       <p class="msg error">
         Esta edición tiene votaciones con votos registrados; el borrado está
         bloqueado para proteger el conteo:

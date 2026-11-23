@@ -1,0 +1,2 @@
+{% comment %}Foto de una opción o sus iniciales. Recibe ``opcion`` y opcional ``clase`` (mini, grande).{% endcomment %}
+{% if opcion.foto %}<img class="foto-opcion {{ clase }}" src="{{ opcion.foto.url }}" alt="Foto de {{ opcion.nombre }}" loading="lazy" width="96" height="96">{% else %}<span class="foto-opcion {{ clase }}" aria-hidden="true">{% if opcion.es_voto_blanco %}—{% else %}{{ opcion.iniciales }}{% endif %}</span>{% endif %}

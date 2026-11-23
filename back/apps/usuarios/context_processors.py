@@ -20,11 +20,14 @@ SECCIONES_POR_ROL = {
         ('gestion:categorias', 'Categorías'),
         ('gestion:votaciones', 'Votaciones'),
         ('resultados_indice', 'Resultados'),
+        ('discrepancias', 'Discrepancias'),
         ('cambiar_password', 'Mi cuenta'),
     ],
     'Auditor': [
+        ('auditoria_ediciones', 'Verificación'),
+        ('discrepancias', 'Discrepancias'),
         ('resultados_indice', 'Resultados'),
-        ('auditoria_lista', 'Auditoría'),
+        ('auditoria_lista', 'Registro'),
         ('cambiar_password', 'Mi cuenta'),
     ],
     'Administrador': [
@@ -33,6 +36,7 @@ SECCIONES_POR_ROL = {
         ('gestion:categorias', 'Categorías'),
         ('gestion:votaciones', 'Votaciones'),
         ('resultados_indice', 'Resultados'),
+        ('discrepancias', 'Discrepancias'),
         ('auditoria_lista', 'Auditoría'),
         ('cambiar_password', 'Mi cuenta'),
     ],

@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import Permission, Role, RolPermiso, Usuario
+from .permisos import TienePermiso
 from .serializers import (
     LoginSerializer,
     PermissionSerializer,
@@ -46,13 +47,19 @@ class MeView(APIView):
 
 
 class RoleListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    """Leer exige sesión; crear roles es de administración (``usuarios.crear``)."""
+
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'usuarios.crear'
     queryset = Role.objects.all().order_by('id')
     serializer_class = RoleSerializer
 
 
 class PermissionListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsAuthenticated]
+    """Leer exige sesión; crear códigos del catálogo es de administración."""
+
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'usuarios.crear'
     queryset = Permission.objects.all().order_by('id')
     serializer_class = PermissionSerializer
 

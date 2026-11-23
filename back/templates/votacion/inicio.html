@@ -19,7 +19,7 @@
           <div class="progreso">
             <div class="texto">
               <span>Tu progreso</span>
-              <span>{{ destacada.categorias_votadas }} de {{ destacada.num_categorias }} categoría{{ destacada.num_categorias|pluralize }}</span>
+              <span>{{ destacada.categorias_votadas }} de {{ destacada.num_categorias }} votaci{{ destacada.num_categorias|pluralize:"ón,ones" }}</span>
             </div>
             <div class="pista" role="img" aria-label="Votaste en {{ destacada.categorias_votadas }} de {{ destacada.num_categorias }} categorías">
               <span style="width:{% widthratio destacada.categorias_votadas destacada.num_categorias 100 %}%"></span>
@@ -50,10 +50,13 @@
           <strong>{{ destacada.num_abiertas }}</strong>
           <span>votaci{{ destacada.num_abiertas|pluralize:"ón,ones" }} abierta{{ destacada.num_abiertas|pluralize }}</span>
         </div>
-        <div class="hero-dato">
-          <strong>{{ votos_destacada }}</strong>
-          <span>voto{{ votos_destacada|pluralize }} emitido{{ votos_destacada|pluralize }}</span>
-        </div>
+        {% if votos_destacada %}
+          {# Solo para el equipo interno: el público no ve cifras de votos en curso. #}
+          <div class="hero-dato">
+            <strong>{{ votos_destacada }}</strong>
+            <span>voto{{ votos_destacada|pluralize }} emitido{{ votos_destacada|pluralize }}</span>
+          </div>
+        {% endif %}
       </div>
     </section>
 

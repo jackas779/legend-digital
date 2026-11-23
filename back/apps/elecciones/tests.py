@@ -44,7 +44,12 @@ class EleccionesFlowTests(TestCase):
     def _crear_edicion(self):
         return self.client.post(
             reverse('ediciones-list'),
-            {'nombre': 'Festival 2027', 'anio': 2027, 'estado': 'BORRADOR'},
+            {
+                'nombre': 'Festival 2027',
+                'anio': 2027,
+                'fecha_inicio': '2027-11-01T00:00:00Z',
+                'fecha_fin': '2027-11-30T00:00:00Z',
+            },
             format='json',
         )
 
@@ -77,6 +82,60 @@ class EleccionesFlowTests(TestCase):
         self.assertEqual(response.data['nombre'], 'Festival 2027')
         self.assertEqual(response.data['anio'], 2027)
         self.assertEqual(response.data['creador'], self.perfil.id)
+        self.assertEqual(response.data['estado'], 'BORRADOR')
+
+    def test_api_no_permite_fijar_el_estado(self):
+        response = self.client.post(
+            reverse('ediciones-list'),
+            {
+                'nombre': 'Festival 2028',
+                'anio': 2028,
+                'estado': 'FINALIZADA',
+                'fecha_inicio': '2028-11-01T00:00:00Z',
+                'fecha_fin': '2028-11-30T00:00:00Z',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['estado'], 'BORRADOR')
+
+    def test_api_exige_el_periodo(self):
+        response = self.client.post(
+            reverse('ediciones-list'), {'nombre': 'Sin fechas', 'anio': 2027}, format='json'
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('fecha_inicio', response.data)
+
+    def test_api_votacion_fuera_del_periodo_se_rechaza(self):
+        edicion = self._crear_edicion()
+        categoria = self._crear_categoria()
+
+        response = self.client.post(
+            reverse('votaciones-list'),
+            {
+                'edicion': edicion.data['id'],
+                'categoria': categoria.data['id'],
+                'nombre': 'Fuera de fecha',
+                'fecha_apertura': '2027-12-01T10:00:00Z',
+                'fecha_cierre': '2027-12-02T18:00:00Z',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('fecha_cierre', response.data)
+
+    def test_api_transicion_programar_valida(self):
+        edicion = self._crear_edicion()
+
+        response = self.client.post(
+            reverse('ediciones-transicion', args=[edicion.data['id'], 'programar'])
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.data['errores'])
 
     def test_crear_categoria(self):
         response = self._crear_categoria()
@@ -230,18 +289,39 @@ class GestionEdicionesTests(TestCase):
         primera = respuesta.context['ediciones'].first()
         self.assertEqual(primera.num_votaciones, 0)
 
+    PERIODO = {'fecha_inicio': '2027-04-01T08:00', 'fecha_fin': '2027-05-31T20:00'}
+
     def test_crear_edicion_valida(self):
         self._sesion(self.rol_organizador)
 
         respuesta = self.client.post(
             reverse('gestion:edicion_crear'),
-            {'nombre': 'Festival', 'anio': 2027, 'estado': 'BORRADOR'},
+            {'nombre': 'Festival', 'anio': 2027, 'estado': 'ACTIVA', **self.PERIODO},
         )
 
-        self.assertRedirects(respuesta, reverse('gestion:ediciones'))
         from back.apps.elecciones.models import Edicion
 
-        self.assertTrue(Edicion.objects.filter(nombre='Festival', anio=2027).exists())
+        edicion = Edicion.objects.get(nombre='Festival', anio=2027)
+        self.assertRedirects(respuesta, reverse('gestion:edicion_gestionar', args=[edicion.id]))
+        # El estado no se elige en el formulario: siempre nace en borrador.
+        self.assertEqual(edicion.estado, 'BORRADOR')
+        self.assertIsNotNone(edicion.fecha_inicio)
+
+    def test_crear_edicion_exige_periodo_valido(self):
+        self._sesion(self.rol_organizador)
+
+        respuesta = self.client.post(
+            reverse('gestion:edicion_crear'),
+            {
+                'nombre': 'Festival',
+                'anio': 2027,
+                'fecha_inicio': '2027-05-31T20:00',
+                'fecha_fin': '2027-04-01T08:00',
+            },
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTrue(respuesta.context['form'].errors['fecha_fin'])
 
     def test_nombre_y_anio_duplicado_da_error_en_formulario(self):
         self._sesion(self.rol_organizador)
@@ -249,7 +329,7 @@ class GestionEdicionesTests(TestCase):
 
         respuesta = self.client.post(
             reverse('gestion:edicion_crear'),
-            {'nombre': 'Festival', 'anio': 2027, 'estado': 'BORRADOR'},
+            {'nombre': 'Festival', 'anio': 2027, **self.PERIODO},
         )
 
         self.assertEqual(respuesta.status_code, 200)
@@ -261,12 +341,50 @@ class GestionEdicionesTests(TestCase):
 
         respuesta = self.client.post(
             reverse('gestion:edicion_editar', args=[edicion.id]),
-            {'nombre': 'Festival de Invierno', 'anio': 2027, 'estado': 'BORRADOR'},
+            {'nombre': 'Festival de Invierno', 'anio': 2027, **self.PERIODO},
         )
 
         self.assertRedirects(respuesta, reverse('gestion:ediciones'))
         edicion.refresh_from_db()
         self.assertEqual(edicion.nombre, 'Festival de Invierno')
+
+    def test_programada_solo_cambia_el_nombre(self):
+        from datetime import datetime
+
+        from django.utils import timezone
+
+        self._sesion(self.rol_organizador)
+        inicio = timezone.make_aware(datetime(2027, 4, 1, 8, 0))
+        fin = timezone.make_aware(datetime(2027, 5, 31, 20, 0))
+        edicion = self._edicion(estado='PROGRAMADA', fecha_inicio=inicio, fecha_fin=fin)
+
+        self.client.post(
+            reverse('gestion:edicion_editar', args=[edicion.id]),
+            {
+                'nombre': 'Festival Renombrado',
+                'anio': 2030,
+                'fecha_inicio': '2030-01-01T00:00',
+                'fecha_fin': '2030-02-01T00:00',
+            },
+        )
+
+        edicion.refresh_from_db()
+        self.assertEqual(edicion.nombre, 'Festival Renombrado')
+        self.assertEqual(edicion.anio, 2027)
+        self.assertEqual(edicion.fecha_inicio, inicio)
+
+    def test_activa_no_se_edita(self):
+        self._sesion(self.rol_organizador)
+        edicion = self._edicion(estado='ACTIVA')
+
+        respuesta = self.client.post(
+            reverse('gestion:edicion_editar', args=[edicion.id]),
+            {'nombre': 'Otro nombre', 'anio': 2027, **self.PERIODO},
+        )
+
+        self.assertRedirects(respuesta, reverse('gestion:edicion_gestionar', args=[edicion.id]))
+        edicion.refresh_from_db()
+        self.assertEqual(edicion.nombre, 'Festival')
 
     def test_eliminar_con_confirmacion(self):
         self._sesion(self.rol_organizador)
@@ -300,7 +418,7 @@ class GestionEdicionesTests(TestCase):
             edicion=edicion,
             categoria=categoria,
             nombre='Canción favorita',
-            estado='ACTIVA',
+            estado='ABIERTA',
             fecha_apertura=timezone.now() - timedelta(days=1),
             fecha_cierre=timezone.now() + timedelta(days=1),
         )
@@ -314,35 +432,28 @@ class GestionEdicionesTests(TestCase):
         self.assertRedirects(bloqueado, reverse('gestion:ediciones'))
         self.assertTrue(Edicion.objects.filter(pk=edicion.id).exists())
 
-    def test_finalizar_sin_regreso(self):
+    def test_finalizada_no_se_elimina(self):
+        from back.apps.elecciones.models import Edicion
+
         self._sesion(self.rol_organizador)
-        edicion = self._edicion(estado='ACTIVA')
+        edicion = self._edicion(estado='FINALIZADA')
 
-        respuesta = self.client.post(
-            reverse('gestion:edicion_finalizar', args=[edicion.id]),
-        )
-        self.assertRedirects(respuesta, reverse('gestion:ediciones'))
-        edicion.refresh_from_db()
-        self.assertEqual(edicion.estado, 'FINALIZADA')
+        self.client.post(reverse('gestion:edicion_eliminar', args=[edicion.id]))
 
-        # Publicar sobre FINALIZADA no cambia nada (ED4).
-        respuesta = self.client.post(
-            reverse('gestion:edicion_publicar', args=[edicion.id]),
-        )
-        edicion.refresh_from_db()
-        self.assertEqual(edicion.estado, 'FINALIZADA')
+        self.assertTrue(Edicion.objects.filter(pk=edicion.id).exists())
 
-    def test_publicar_borrador(self):
+    def test_programar_sin_validacion_no_cambia_el_estado(self):
         self._sesion(self.rol_organizador)
         edicion = self._edicion(estado='BORRADOR')
 
         respuesta = self.client.post(
-            reverse('gestion:edicion_publicar', args=[edicion.id]),
+            reverse('gestion:edicion_programar', args=[edicion.id]), follow=True
         )
 
-        self.assertRedirects(respuesta, reverse('gestion:ediciones'))
         edicion.refresh_from_db()
-        self.assertEqual(edicion.estado, 'ACTIVA')
+        self.assertEqual(edicion.estado, 'BORRADOR')
+        mensajes = [str(m) for m in respuesta.context['messages']]
+        self.assertTrue(any('fecha de inicio' in m for m in mensajes))
 
 
 class GestionarEdicionTests(TestCase):
@@ -354,10 +465,18 @@ class GestionarEdicionTests(TestCase):
 
     def setUp(self):
         GestionEdicionesTests.setUp(self)
+        from datetime import datetime
+
+        from django.utils import timezone
+
         from back.apps.elecciones.models import Categoria
 
         self._sesion(self.rol_organizador)
-        self.edicion = self._edicion(estado='ACTIVA')
+        self.edicion = self._edicion(
+            estado='BORRADOR',
+            fecha_inicio=timezone.make_aware(datetime(2027, 4, 1, 8, 0)),
+            fecha_fin=timezone.make_aware(datetime(2027, 5, 31, 20, 0)),
+        )
         self.musica = Categoria.objects.create(nombre='Música')
         self.url = reverse('gestion:edicion_gestionar', args=[self.edicion.id])
         self.fechas = {
@@ -365,21 +484,20 @@ class GestionarEdicionTests(TestCase):
             'fecha_cierre': '2027-04-30T18:00',
         }
 
-    def _votacion(self, categoria, nombre='Canción del año'):
-        from datetime import timedelta
+    def _votacion(self, categoria, nombre='Canción del año', estado='BORRADOR'):
+        from datetime import datetime
 
         from django.utils import timezone
 
         from back.apps.elecciones.models import Votacion
 
-        ahora = timezone.now()
         return Votacion.objects.create(
             edicion=self.edicion,
             categoria=categoria,
             nombre=nombre,
-            fecha_apertura=ahora,
-            fecha_cierre=ahora + timedelta(days=1),
-            estado='ACTIVA',
+            fecha_apertura=timezone.make_aware(datetime(2027, 4, 26, 9, 0)),
+            fecha_cierre=timezone.make_aware(datetime(2027, 4, 30, 18, 0)),
+            estado=estado,
         )
 
     def test_panel_muestra_las_categorias_de_la_edicion(self):
@@ -441,6 +559,53 @@ class GestionarEdicionTests(TestCase):
         self.assertEqual(respuesta.status_code, 200)
         self.assertFalse(self.edicion.votaciones.exists())
 
+    def test_fechas_fuera_del_periodo_de_la_edicion(self):
+        respuesta = self.client.post(self.url, {
+            'categoria': self.musica.id,
+            'nombre_votacion': 'Fuera de fecha',
+            'fecha_apertura': '2027-06-10T09:00',
+            'fecha_cierre': '2027-06-12T18:00',
+        })
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTrue(respuesta.context['form'].errors['fecha_cierre'])
+        self.assertFalse(self.edicion.votaciones.exists())
+
+    def test_categoria_archivada_no_se_ofrece(self):
+        from back.apps.elecciones.models import Categoria
+
+        Categoria.objects.create(nombre='Antigua', archivada=True)
+
+        respuesta = self.client.get(self.url)
+
+        nombres = [c.nombre for c in respuesta.context['form'].fields['categoria'].queryset]
+        self.assertIn('Música', nombres)
+        self.assertNotIn('Antigua', nombres)
+
+    def test_programada_no_admite_categorias(self):
+        self.edicion.estado = 'PROGRAMADA'
+        self.edicion.save(update_fields=['estado'])
+
+        respuesta = self.client.post(self.url, {
+            'categoria': self.musica.id,
+            'nombre_votacion': 'Tarde',
+            **self.fechas,
+        })
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertIsNone(respuesta.context['form'])
+        self.assertFalse(self.edicion.votaciones.exists())
+
+    def test_programada_no_quita_categorias(self):
+        self._votacion(self.musica, estado='LISTA')
+        self.edicion.estado = 'PROGRAMADA'
+        self.edicion.save(update_fields=['estado'])
+        url = reverse('gestion:edicion_quitar_categoria', args=[self.edicion.id, self.musica.id])
+
+        self.client.post(url)
+
+        self.assertTrue(self.edicion.votaciones.exists())
+
     def test_quitar_categoria_sin_votos_borra_sus_votaciones(self):
         self._votacion(self.musica)
         url = reverse('gestion:edicion_quitar_categoria', args=[self.edicion.id, self.musica.id])
@@ -465,7 +630,7 @@ class GestionarEdicionTests(TestCase):
         self.assertTrue(self.edicion.votaciones.exists())
 
     def test_cerrar_votacion_vuelve_al_panel_de_la_edicion(self):
-        votacion = self._votacion(self.musica)
+        votacion = self._votacion(self.musica, estado='ABIERTA')
 
         respuesta = self.client.post(
             reverse('gestion:votacion_cerrar', args=[votacion.id]),
@@ -473,9 +638,11 @@ class GestionarEdicionTests(TestCase):
         )
 
         self.assertRedirects(respuesta, self.url)
+        votacion.refresh_from_db()
+        self.assertEqual(votacion.estado, 'CERRADA')
 
     def test_siguiente_externo_se_ignora(self):
-        votacion = self._votacion(self.musica)
+        votacion = self._votacion(self.musica, estado='ABIERTA')
 
         respuesta = self.client.post(
             reverse('gestion:votacion_cerrar', args=[votacion.id]),
@@ -574,7 +741,7 @@ class GestionCategoriasTests(TestCase):
             edicion=edicion,
             categoria=categoria,
             nombre='Canción favorita',
-            estado='ACTIVA',
+            estado='ABIERTA',
             fecha_apertura=timezone.now() - timedelta(days=1),
             fecha_cierre=timezone.now() + timedelta(days=1),
         )
@@ -597,6 +764,69 @@ class GestionCategoriasTests(TestCase):
 
         self.assertRedirects(respuesta, reverse('gestion:categorias'))
         self.assertFalse(Categoria.objects.filter(pk=categoria.pk).exists())
+
+    def test_archivar_y_reactivar(self):
+        from back.apps.elecciones.models import Categoria
+
+        categoria = Categoria.objects.create(nombre='Literatura')
+        url = reverse('gestion:categoria_archivar', args=[categoria.id])
+
+        self.client.post(url)
+        categoria.refresh_from_db()
+        self.assertTrue(categoria.archivada)
+
+        self.client.post(url)
+        categoria.refresh_from_db()
+        self.assertFalse(categoria.archivada)
+
+    def test_usada_en_edicion_finalizada_no_se_renombra(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from back.apps.elecciones.models import Categoria, Edicion, Votacion
+
+        categoria = Categoria.objects.create(nombre='Música')
+        edicion = Edicion.objects.create(nombre='Festival', anio=2025, estado='FINALIZADA')
+        Votacion.objects.create(
+            edicion=edicion,
+            categoria=categoria,
+            nombre='Canción 2025',
+            estado='ESCRUTADA',
+            fecha_apertura=timezone.now() - timedelta(days=3),
+            fecha_cierre=timezone.now() - timedelta(days=2),
+        )
+
+        self.client.post(
+            reverse('gestion:categoria_editar', args=[categoria.id]),
+            {'nombre': 'Música Nueva', 'descripcion': 'Descripción actualizada'},
+        )
+
+        categoria.refresh_from_db()
+        self.assertEqual(categoria.nombre, 'Música')
+        self.assertEqual(categoria.descripcion, 'Descripción actualizada')
+
+    def test_una_categoria_en_varias_ediciones(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from back.apps.elecciones.models import Categoria, Edicion, Votacion
+
+        categoria = Categoria.objects.create(nombre='Música')
+        for anio in (2026, 2027):
+            Votacion.objects.create(
+                edicion=Edicion.objects.create(nombre='Festival', anio=anio),
+                categoria=categoria,
+                nombre=f'Canción {anio}',
+                fecha_apertura=timezone.now(),
+                fecha_cierre=timezone.now() + timedelta(days=1),
+            )
+
+        respuesta = self.client.get(reverse('gestion:categorias'))
+
+        anotada = [c for c in respuesta.context['categorias'] if c.pk == categoria.pk][0]
+        self.assertEqual(anotada.num_ediciones, 2)
 
 
 class GestionVotacionesTests(TestCase):
@@ -645,7 +875,9 @@ class GestionVotacionesTests(TestCase):
             'nombre': 'Canción favorita',
             'fecha_apertura': (self.ahora - self.delta).strftime('%Y-%m-%dT%H:%M'),
             'fecha_cierre': (self.ahora + self.delta).strftime('%Y-%m-%dT%H:%M'),
-            'estado': 'ACTIVA',
+            'modo_participacion': 'LIBRE',
+            'regla_resultado': 'MAYORIA_SIMPLE',
+            'clasifican': 2,
         }
 
     def _votacion(self, **extra):
@@ -767,26 +999,57 @@ class GestionVotacionesTests(TestCase):
         votacion.refresh_from_db()
         self.assertEqual(votacion.nombre, 'Canción del público')
 
-    def test_abrir_y_no_reabrir_finalizada(self):
-        votacion = self._votacion(estado='BORRADOR')
+    def test_abrir_y_no_reabrir_cerrada(self):
+        self.edicion.estado = 'ACTIVA'
+        self.edicion.save(update_fields=['estado'])
+        votacion = self._votacion(estado='LISTA')
 
         self.client.post(reverse('gestion:votacion_abrir', args=[votacion.id]))
         votacion.refresh_from_db()
-        self.assertEqual(votacion.estado, 'ACTIVA')
+        self.assertEqual(votacion.estado, 'ABIERTA')
 
         self.client.post(reverse('gestion:votacion_cerrar', args=[votacion.id]))
         votacion.refresh_from_db()
-        self.assertEqual(votacion.estado, 'FINALIZADA')
+        self.assertEqual(votacion.estado, 'CERRADA')
 
         self.client.post(reverse('gestion:votacion_abrir', args=[votacion.id]))
         votacion.refresh_from_db()
-        self.assertEqual(votacion.estado, 'FINALIZADA')
+        self.assertEqual(votacion.estado, 'CERRADA')
+
+    def test_no_se_abre_si_la_edicion_no_esta_activa(self):
+        """R1: una votación solo está ABIERTA si su edición está ACTIVA."""
+        votacion = self._votacion(estado='LISTA')  # Edición en BORRADOR.
+
+        self.client.post(reverse('gestion:votacion_abrir', args=[votacion.id]))
+
+        votacion.refresh_from_db()
+        self.assertEqual(votacion.estado, 'LISTA')
+
+    def test_solo_se_crea_en_ediciones_en_borrador(self):
+        self.edicion.estado = 'PROGRAMADA'
+        self.edicion.save(update_fields=['estado'])
+
+        respuesta = self.client.post(reverse('gestion:votacion_crear'), self.datos_base)
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTrue(respuesta.context['form'].errors['edicion'])
+
+    def test_cerrada_no_se_edita(self):
+        votacion = self._votacion(estado='CERRADA')
+
+        self.client.post(
+            reverse('gestion:votacion_editar', args=[votacion.id]),
+            {**self.datos_base, 'nombre': 'Cambio tardío'},
+        )
+
+        votacion.refresh_from_db()
+        self.assertEqual(votacion.nombre, 'Canción favorita')
 
     def test_cerrar_no_borra_votos(self):
         from back.apps.elecciones.models import Opcion
         from back.apps.votacion.models import Voto
 
-        votacion = self._votacion(estado='ACTIVA')
+        votacion = self._votacion(estado='ABIERTA')
         opcion = Opcion.objects.create(votacion=votacion, nombre='Canción A', orden=1)
         Voto.objects.create(opcion=opcion)
 
@@ -794,7 +1057,7 @@ class GestionVotacionesTests(TestCase):
 
         self.assertRedirects(respuesta, reverse('gestion:votaciones'))
         votacion.refresh_from_db()
-        self.assertEqual(votacion.estado, 'FINALIZADA')
+        self.assertEqual(votacion.estado, 'CERRADA')
         self.assertEqual(Voto.objects.count(), 1)
 
     def test_fuera_de_rango_no_se_vota(self):
@@ -807,9 +1070,11 @@ class GestionVotacionesTests(TestCase):
 
         from back.apps.usuarios.models import Usuario
 
-        # VO4: estado ACTIVA pero la ventana ya terminó; no se permite votar.
+        # VO4: estado ABIERTA pero la ventana ya terminó; no se permite votar.
+        self.edicion.estado = 'ACTIVA'
+        self.edicion.save(update_fields=['estado'])
         votacion = self._votacion(
-            estado='ACTIVA',
+            estado='ABIERTA',
             fecha_apertura=timezone.now() - timedelta(days=2),
             fecha_cierre=timezone.now() - timedelta(days=1),
         )
@@ -862,7 +1127,7 @@ class GestionOpcionesTests(TestCase):
             edicion=edicion,
             categoria=categoria,
             nombre='Canción favorita',
-            estado='ACTIVA',
+            estado='BORRADOR',
             fecha_apertura=timezone.now() - timedelta(days=1),
             fecha_cierre=timezone.now() + timedelta(days=1),
         )
@@ -1000,6 +1265,33 @@ class GestionOpcionesTests(TestCase):
 
         self.assertFalse(Opcion.objects.filter(pk=opcion.pk).exists())
 
+    def test_votacion_abierta_no_admite_opciones_nuevas(self):
+        from back.apps.elecciones.models import Opcion
+
+        self.votacion.estado = 'ABIERTA'
+        self.votacion.save(update_fields=['estado'])
+
+        self.client.post(
+            reverse('gestion:opcion_crear', args=[self.votacion.id]),
+            {'nombre': 'Colada', 'orden': 5, 'subtitulo': ''},
+        )
+
+        self.assertFalse(Opcion.objects.filter(nombre='Colada').exists())
+
+    def test_votacion_lista_solo_corrige_textos(self):
+        opcion = self._opcion()
+        self.votacion.estado = 'LISTA'
+        self.votacion.save(update_fields=['estado'])
+
+        self.client.post(
+            reverse('gestion:opcion_editar', args=[self.votacion.id, opcion.id]),
+            {'nombre': 'Canción A (corregida)', 'orden': 7, 'subtitulo': ''},
+        )
+
+        opcion.refresh_from_db()
+        self.assertEqual(opcion.nombre, 'Canción A (corregida)')
+        self.assertEqual(opcion.orden, 1)
+
     def test_votante_no_gestiona_opciones(self):
         from back.apps.usuarios.models import Role, Usuario
 
@@ -1078,15 +1370,15 @@ class CategoriasPublicasTests(TestCase):
         self.musica = Categoria.objects.create(nombre='Música')
         self.deportes = Categoria.objects.create(nombre='Deportes')
 
-        self.festival = Edicion.objects.create(nombre='Festival', anio=2027)
-        self.estudiantil = Edicion.objects.create(nombre='Estudiantiles', anio=2027)
+        self.festival = Edicion.objects.create(nombre='Festival', anio=2027, estado='ACTIVA')
+        self.estudiantil = Edicion.objects.create(nombre='Estudiantiles', anio=2027, estado='ACTIVA')
 
         ventana = (timezone.now() - timedelta(days=1), timezone.now() + timedelta(days=1))
         self.vot_cancion = Votacion.objects.create(
             edicion=self.festival,
             categoria=self.musica,
             nombre='Canción favorita',
-            estado='ACTIVA',
+            estado='ABIERTA',
             fecha_apertura=ventana[0],
             fecha_cierre=ventana[1],
         )
@@ -1094,7 +1386,7 @@ class CategoriasPublicasTests(TestCase):
             edicion=self.estudiantil,
             categoria=self.deportes,
             nombre='Mejor equipo',
-            estado='ACTIVA',
+            estado='ABIERTA',
             fecha_apertura=ventana[0],
             fecha_cierre=ventana[1],
         )

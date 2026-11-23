@@ -48,6 +48,8 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    # Apertura y cierre automáticos por fecha de ediciones y votaciones.
+    'back.apps.elecciones.middleware.SincronizarEstadosMiddleware',
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -136,6 +138,14 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+
+# Archivos subidos (fotos de las opciones). En desarrollo los sirve Django
+# (ver back/urls.py); en producción los debe servir el servidor web.
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# Tope de las fotos de candidatos (la validación está en elecciones/imagenes.py).
+FOTO_MAX_BYTES = 2 * 1024 * 1024
 
 # Autenticación por sesión para las vistas MVT (el panel y el tarjetón).
 LOGIN_URL = 'auth:login'

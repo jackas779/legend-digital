@@ -6,6 +6,7 @@ votantes se reconocen por su documento y nadie vota dos veces.
 """
 
 from collections import defaultdict
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
@@ -15,7 +16,13 @@ from django.db import transaction
 from back.apps.auditoria.servicio import registrar_evento
 from back.apps.elecciones.models import Votacion
 from back.apps.usuarios.models import Role, Usuario
-from back.apps.votacion.models import PadronVotante, Voto
+from back.apps.votacion.models import (
+    InscripcionEdicion,
+    PadronVotante,
+    Voto,
+    nuevo_comprobante,
+    truncar_a_hora,
+)
 
 CLAVE_DEMO = 'voto123'
 
@@ -56,6 +63,18 @@ def pesos_opciones(opciones, semilla):
     return pesos
 
 
+def _momento_historico(votacion, user):
+    """Instante dentro de la ventana de la votación, fijo para cada votante.
+
+    Se usa al poblar votaciones ya CERRADAS (ediciones anteriores de la
+    demo): sus votos deben quedar fechados dentro de su horario, o el
+    auditor los vería como "fuera de horario".
+    """
+    ventana = votacion.fecha_cierre - votacion.fecha_apertura
+    fraccion = ((user.pk or 0) * 37 % 97 + 1) / 99
+    return votacion.fecha_apertura + ventana * fraccion
+
+
 def emitir_voto(user, opcion):
     """Emite el voto de ``user`` por ``opcion`` y marca su padrón.
 
@@ -65,6 +84,15 @@ def emitir_voto(user, opcion):
     votacion = opcion.votacion
     try:
         with transaction.atomic():
+            if votacion.solo_inscritos:
+                # Demo: el votante quedó inscrito antes de que la votación abriera.
+                inscripcion, _ = InscripcionEdicion.objects.get_or_create(
+                    edicion_id=votacion.edicion_id, usuario=user
+                )
+                if inscripcion.fecha_inscripcion >= votacion.fecha_apertura:
+                    InscripcionEdicion.objects.filter(pk=inscripcion.pk).update(
+                        fecha_inscripcion=votacion.fecha_apertura - timedelta(days=1)
+                    )
             padron, _ = PadronVotante.objects.get_or_create(
                 usuario=user,
                 votacion=votacion,
@@ -76,8 +104,17 @@ def emitir_voto(user, opcion):
             if padron.ha_votado:
                 return False
             voto = Voto.objects.create(opcion=opcion)
+            if votacion.estado == Votacion.CERRADA:
+                # Carga histórica: se fecha dentro de la ventana (redondeada
+                # a la hora, como todo voto) y se vuelve a firmar.
+                voto.fecha_registro = truncar_a_hora(_momento_historico(votacion, user))
+                voto.firma_criptografica = voto.calcular_firma()
+                Voto.objects.filter(pk=voto.pk).update(
+                    fecha_registro=voto.fecha_registro,
+                    firma_criptografica=voto.firma_criptografica,
+                )
             padron.ha_votado = True
-            padron.hash_comprobante = voto.firma_criptografica
+            padron.hash_comprobante = nuevo_comprobante()
             padron.save(update_fields=['ha_votado', 'hash_comprobante'])
     except Exception:
         return False  # No interrumpe la carga por un usuario puntual.
@@ -104,7 +141,7 @@ class Command(BaseCommand):
             '--votacion',
             type=int,
             default=None,
-            help='Id de la votación; por defecto se usa la primera ACTIVA.',
+            help='Id de la votación; por defecto se usa la primera ABIERTA.',
         )
         parser.add_argument(
             '--participacion',
@@ -116,7 +153,8 @@ class Command(BaseCommand):
             '--todas',
             action='store_true',
             help=(
-                'Simula en todas las votaciones ACTIVAS. Si una categoría tiene '
+                'Simula en todas las votaciones ABIERTAS (y en las CERRADAS '
+                'pendientes de escrutinio). Si una categoría tiene '
                 'varias votaciones en la edición, reparte a los votantes entre '
                 'ellas (un voto por categoría).'
             ),
@@ -132,7 +170,7 @@ class Command(BaseCommand):
         votacion = self._obtener_votacion(options['votacion'])
         if votacion is None:
             raise CommandError(
-                'No hay votaciones ACTIVAS para simular; ejecuta '
+                'No hay votaciones ABIERTAS para simular; ejecuta '
                 'cargar_demo primero (python manage.py preparar).'
             )
 
@@ -177,16 +215,17 @@ class Command(BaseCommand):
         )
 
     def _simular_todas(self, total_votantes, participacion):
-        """Simula en cada votación activa respetando un voto por categoría."""
-        # También las FINALIZADAS: así las ediciones anteriores tienen resultados.
+        """Simula en cada votación abierta respetando un voto por categoría."""
+        # También las CERRADAS pendientes de escrutinio: así las ediciones
+        # anteriores tienen resultados antes de generar sus actas.
         votaciones = list(
-            Votacion.objects.filter(estado__in=['ACTIVA', 'FINALIZADA'])
+            Votacion.objects.filter(estado__in=[Votacion.ABIERTA, Votacion.CERRADA])
             .select_related('edicion', 'categoria')
             .order_by('edicion_id', 'categoria_id', 'id')
         )
         if not votaciones:
             raise CommandError(
-                'No hay votaciones ACTIVAS para simular; ejecuta '
+                'No hay votaciones ABIERTAS para simular; ejecuta '
                 'python manage.py preparar.'
             )
 
@@ -198,10 +237,10 @@ class Command(BaseCommand):
 
         grupos = defaultdict(list)
         for votacion in votaciones:
-            grupos[(votacion.edicion_id, votacion.categoria_id)].append(votacion)
+            grupos[(votacion.edicion_id, votacion.categoria_id, votacion.numero_ronda)].append(votacion)
 
         total_nuevos = 0
-        for (edicion_id, categoria_id), lista in grupos.items():
+        for (edicion_id, categoria_id, ronda), lista in grupos.items():
             for posicion, votacion in enumerate(lista):
                 opciones = list(votacion.opciones.order_by('orden', 'nombre'))
                 if not opciones:
@@ -210,7 +249,7 @@ class Command(BaseCommand):
                 # categoría no puede entrar en esta (regla de unicidad).
                 ocupados = set(
                     PadronVotante.objects.filter(
-                        edicion_id=edicion_id, categoria_id=categoria_id
+                        edicion_id=edicion_id, categoria_id=categoria_id, ronda=ronda
                     )
                     .exclude(votacion=votacion)
                     .values_list('usuario_id', flat=True)
@@ -256,7 +295,7 @@ class Command(BaseCommand):
             return Votacion.objects.filter(pk=id_votacion).first()
         return (
             Votacion.objects
-            .filter(estado='ACTIVA')
+            .filter(estado=Votacion.ABIERTA)
             .order_by('id')
             .first()
         )

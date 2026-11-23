@@ -616,14 +616,56 @@ class PermisosTests(TestCase):
         self.assertEqual(Permission.objects.count(), total_permisos)
         self.assertEqual(RolPermiso.objects.count(), total_asignaciones)
 
+    def test_migrate_entrega_permisos_nuevos_a_roles_existentes(self):
+        """Un permiso nuevo del código llega al rol sin correr cargar_permisos."""
+        from django.core.management import call_command
+
+        from back.apps.usuarios.models import RolPermiso
+        from back.apps.usuarios.permisos import tiene_permiso
+
+        organizador, _ = self._usuario(self.Role.objects.get(nombre='Organizador'))
+        RolPermiso.objects.filter(permiso__codigo='inscripciones.gestionar').delete()
+        self.assertFalse(tiene_permiso(organizador, 'inscripciones.gestionar'))
+
+        call_command('migrate', verbosity=0)
+
+        self.assertTrue(tiene_permiso(organizador, 'inscripciones.gestionar'))
+
+    def test_sin_permiso_muestra_pagina_legible(self):
+        votante, _ = self._usuario(self.Role.objects.get(nombre='Votante'))
+        self.client.force_login(votante)
+
+        respuesta = self.client.get(reverse('gestion:ediciones'))
+
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertContains(respuesta, 'ediciones.ver', status_code=403)
+
+    def test_un_votante_no_crea_roles_por_la_api(self):
+        from rest_framework.test import APIClient
+
+        votante, _ = self._usuario(self.Role.objects.get(nombre='Votante'))
+        cliente = APIClient()
+        cliente.force_authenticate(votante)
+
+        self.assertEqual(cliente.get(reverse('roles')).status_code, 200)
+        respuesta = cliente.post(reverse('roles'), {'nombre': 'Superpoder'}, format='json')
+
+        self.assertEqual(respuesta.status_code, 403)
+        self.assertFalse(self.Role.objects.filter(nombre='Superpoder').exists())
+
     def test_catalogo_los_cuatro_roles(self):
         from back.apps.usuarios.models import RolPermiso
 
-        for nombre in ('Administrador', 'Organizador', 'Votante', 'Auditor'):
-            from back.apps.usuarios.models import Role
-
+        for nombre in ('Administrador', 'Organizador', 'Auditor'):
             rol = self.Role.objects.get(nombre=nombre)
             self.assertGreater(RolPermiso.objects.filter(rol=rol).count(), 0)
+
+        # El votante no tiene permisos del catálogo: vota y ve resultados al
+        # cierre, pero no resultados en vivo (podrían influir en el voto).
+        votante = self.Role.objects.get(nombre='Votante')
+        self.assertFalse(
+            RolPermiso.objects.filter(rol=votante, permiso__codigo='resultados.ver').exists()
+        )
 
     def test_tiene_permiso_por_rol(self):
         from back.apps.usuarios.permisos import tiene_permiso
@@ -636,8 +678,9 @@ class PermisosTests(TestCase):
         self.assertTrue(tiene_permiso(organizador, 'resultados.ver'))
         self.assertFalse(tiene_permiso(organizador, 'usuarios.crear'))
 
-        # El votante solo ve resultados: no puede escribir votaciones (P5).
+        # El votante no escribe votaciones (P5) ni ve resultados en vivo.
         self.assertFalse(tiene_permiso(votante, 'votaciones.crear'))
+        self.assertFalse(tiene_permiso(votante, 'resultados.ver'))
         self.assertTrue(tiene_permiso(admin, 'usuarios.crear'))
 
     def test_tiene_permiso_superusuario_y_sin_perfil(self):

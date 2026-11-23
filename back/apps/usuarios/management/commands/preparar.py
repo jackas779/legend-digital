@@ -42,13 +42,14 @@ def _asegurar_mysql(self):
             raise
 
     # Import local: con SQLite no se necesita el conector de MySQL instalado.
+    # MySQLdb lo provee PyMySQL (registrado en back/__init__.py).
     import MySQLdb
 
     db = MySQLdb.connect(
         host=configuracion['HOST'],
         port=int(configuracion['PORT']),
         user=configuracion['USER'],
-        passwd=configuracion['PASSWORD'],
+        password=configuracion['PASSWORD'],
         charset='utf8mb4',
     )
     with db.cursor() as cursor:
@@ -95,7 +96,24 @@ def _votos_cuentas_demo(self):
             emitir_voto(user, opcion)
 
 
+def _escrutar_ediciones_cerradas(self):
+    """Escruta las ediciones en escrutinio; al terminar quedan FINALIZADAS."""
+    from back.apps.elecciones import ciclo
+    from back.apps.elecciones.models import Edicion
+
+    for edicion in Edicion.objects.filter(estado=Edicion.CERRANDO):
+        escrutadas = ciclo.escrutar_edicion(edicion)
+        self.stdout.write(
+            f'  {edicion}: {escrutadas} acta(s) → {edicion.get_estado_display()}'
+        )
+
+
 class Command(BaseCommand):
+    # Los chequeos del sistema se conectan a la BD (los de MySQL revisan los
+    # campos contra el servidor) y fallarían antes de poder crearla. Se
+    # omiten aquí: ``migrate`` los ejecuta en cuanto la BD existe.
+    requires_system_checks = []
+
     help = (
         'Prepara la aplicación: aplica migraciones, carga el catálogo de '
         'permisos, el escenario de demo (Festival 2027), las cuentas de '
@@ -139,6 +157,11 @@ class Command(BaseCommand):
 
         self.stdout.write('Datos de votación simulados en todas las votaciones...')
         call_command('simular_votacion', todas=True, votantes=VOTANTES_DEMO)
+
+        # Las ediciones anteriores quedan "en escrutinio" con sus votos ya
+        # cargados: se generan sus actas y pasan solas a FINALIZADA.
+        self.stdout.write('Escrutinio de las ediciones anteriores...')
+        _escrutar_ediciones_cerradas(self)
 
         self.stdout.write('')
         self.stdout.write(self.style.SUCCESS(

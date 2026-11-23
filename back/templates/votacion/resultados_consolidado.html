@@ -8,22 +8,24 @@
   <h1>{{ edicion }}</h1>
   <p class="lead">Consolidado de la edición</p>
 
-  <p class="total-votos"><strong>{{ total_edicion }}</strong> voto{{ total_edicion|pluralize }} en total</p>
+  <p class="total-votos"><strong>{{ total_edicion }}</strong> voto{{ total_edicion|pluralize }} en votaciones publicadas</p>
+  <p class="meta">Los resultados de cada votación se publican cuando cierra.</p>
 
   {% if votaciones %}
     <div class="tabla-scroll">
       <table>
         <thead>
-          <tr><th>Votación</th><th>Categoría</th><th>Estado</th><th>Votos</th><th></th></tr>
+          <tr><th>Votación</th><th>Categoría</th><th>Estado</th><th>Votos</th><th>Resultado</th><th></th></tr>
         </thead>
         <tbody>
           {% for votacion in votaciones %}
             <tr>
-              <td><strong>{{ votacion.nombre }}</strong></td>
+              <td><strong>{% if votacion.numero_ronda > 1 %}Ronda {{ votacion.numero_ronda }} · {% endif %}{{ votacion.nombre }}</strong></td>
               <td>{{ votacion.categoria }}</td>
               <td><span class="badge {{ votacion.estado|lower }}">{{ votacion.get_estado_display }}</span></td>
-              <td>{{ votacion.total }}</td>
-              <td><a href="{% url 'resultados' votacion.id %}">Detalle</a></td>
+              <td>{% if votacion.visible %}{{ votacion.total }}{% else %}<span class="meta">Al cierre</span>{% endif %}</td>
+              <td>{% if votacion.resultado %}{{ votacion.get_resultado_display }}{% if votacion.opcion_ganadora %}: {{ votacion.opcion_ganadora.nombre }}{% endif %}{% else %}—{% endif %}</td>
+              <td>{% if votacion.visible %}<a href="{% url 'resultados' votacion.id %}">Detalle</a>{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>

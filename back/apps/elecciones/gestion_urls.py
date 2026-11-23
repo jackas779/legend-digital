@@ -29,15 +29,79 @@ urlpatterns = [
         gestion_views.edicion_eliminar,
         name='edicion_eliminar',
     ),
+    # Ciclo de vida: la activación, el cierre por fecha y la finalización
+    # son automáticos; aquí solo están las acciones humanas.
     path(
-        'ediciones/<int:edicion_id>/publicar/',
-        gestion_views.edicion_publicar,
-        name='edicion_publicar',
+        'ediciones/<int:edicion_id>/programar/',
+        gestion_views.edicion_programar,
+        name='edicion_programar',
     ),
     path(
-        'ediciones/<int:edicion_id>/finalizar/',
-        gestion_views.edicion_finalizar,
-        name='edicion_finalizar',
+        'ediciones/<int:edicion_id>/desprogramar/',
+        gestion_views.edicion_desprogramar,
+        name='edicion_desprogramar',
+    ),
+    path(
+        'ediciones/<int:edicion_id>/cerrar/',
+        gestion_views.edicion_cerrar,
+        name='edicion_cerrar',
+    ),
+    path(
+        'ediciones/<int:edicion_id>/escrutar/',
+        gestion_views.edicion_escrutar,
+        name='edicion_escrutar',
+    ),
+    path(
+        'ediciones/<int:edicion_id>/inscritos/',
+        gestion_views.inscritos,
+        name='inscritos',
+    ),
+    path(
+        'ediciones/<int:edicion_id>/inscritos/<int:inscripcion_id>/retirar/',
+        gestion_views.inscrito_retirar,
+        name='inscrito_retirar',
+    ),
+    # Rondas: siguiente ronda, preparación tras repetición y empates.
+    path(
+        'votaciones/<int:votacion_id>/ronda-siguiente/',
+        gestion_views.ronda_siguiente_crear,
+        name='ronda_siguiente',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/ronda/eliminar/',
+        gestion_views.ronda_eliminar,
+        name='ronda_eliminar',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/ronda/preparar/',
+        gestion_views.ronda_preparar,
+        name='ronda_preparar',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/empate/',
+        gestion_views.empate_resolver,
+        name='empate_resolver',
+    ),
+    # Normativas (reglas) de cada votación.
+    path(
+        'votaciones/<int:votacion_id>/normativas/',
+        gestion_views.normativa_lista,
+        name='normativa_lista',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/normativas/nueva/',
+        gestion_views.normativa_form,
+        name='normativa_crear',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/normativas/<int:normativa_id>/editar/',
+        gestion_views.normativa_form,
+        name='normativa_editar',
+    ),
+    path(
+        'votaciones/<int:votacion_id>/normativas/<int:normativa_id>/eliminar/',
+        gestion_views.normativa_eliminar,
+        name='normativa_eliminar',
     ),
     path('categorias/', gestion_views.categoria_lista, name='categorias'),
     path('categorias/nueva/', gestion_views.categoria_crear, name='categoria_crear'),
@@ -45,6 +109,11 @@ urlpatterns = [
         'categorias/<int:categoria_id>/editar/',
         gestion_views.categoria_editar,
         name='categoria_editar',
+    ),
+    path(
+        'categorias/<int:categoria_id>/archivar/',
+        gestion_views.categoria_archivar,
+        name='categoria_archivar',
     ),
     path(
         'categorias/<int:categoria_id>/eliminar/',

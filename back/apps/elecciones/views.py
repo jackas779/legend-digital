@@ -1,13 +1,16 @@
 from django.db import models
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from back.apps.usuarios.permisos import TienePermiso
 
+from . import ciclo
 from .models import Categoria, Edicion, Normativa, Opcion, RecursoMultimedia, Votacion
 from .serializers import (
     CategoriaSerializer,
@@ -41,6 +44,70 @@ class EdicionDetailView(generics.RetrieveUpdateDestroyAPIView):
     permiso_requerido = 'ediciones.editar'
     queryset = Edicion.objects.select_related('creador').all()
     serializer_class = EdicionSerializer
+
+    def perform_destroy(self, instance):
+        # ED3: solo en BORRADOR o PROGRAMADA (nunca hubo votación).
+        if instance.estado not in (Edicion.BORRADOR, Edicion.PROGRAMADA):
+            raise ValidationError(
+                f'La edición está {instance.estado}: su historial se conserva.'
+            )
+        instance.delete()
+
+
+class TransicionEdicionView(APIView):
+    """Acciones humanas del ciclo de vida de una edición.
+
+    POST /ediciones/<id>/<accion>/ con accion en: programar, desprogramar,
+    cerrar (cierre anticipado, exige ``motivo``) o escrutar. La activación,
+    el cierre por fecha y la finalización son automáticos.
+    """
+
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'ediciones.editar'
+
+    def post(self, request, pk, accion):
+        edicion = get_object_or_404(Edicion, pk=pk)
+        try:
+            if accion == 'programar':
+                ciclo.programar(edicion, request)
+            elif accion == 'desprogramar':
+                ciclo.desprogramar(edicion, request)
+            elif accion == 'cerrar':
+                ciclo.cerrar(
+                    edicion, request, motivo=request.data.get('motivo', ''), anticipado=True
+                )
+            elif accion == 'escrutar':
+                ciclo.escrutar_edicion(edicion, request)
+            else:
+                return Response({'detail': 'Acción desconocida.'}, status=status.HTTP_404_NOT_FOUND)
+        except ciclo.TransicionInvalida as error:
+            return Response(
+                {'detail': str(error), 'errores': error.errores},
+                status=status.HTTP_409_CONFLICT,
+            )
+        edicion.refresh_from_db()
+        return Response(EdicionSerializer(edicion).data)
+
+
+class TransicionVotacionView(APIView):
+    """POST /votaciones/<id>/abrir/ (adelantar apertura) o /cerrar/."""
+
+    permission_classes = [TienePermiso]
+    permiso_requerido = 'votaciones.editar'
+
+    def post(self, request, pk, accion):
+        votacion = get_object_or_404(Votacion.objects.select_related('edicion'), pk=pk)
+        try:
+            if accion == 'abrir':
+                ciclo.abrir_votacion(votacion, request)
+            elif accion == 'cerrar':
+                ciclo.cerrar_votacion(votacion, request)
+            else:
+                return Response({'detail': 'Acción desconocida.'}, status=status.HTTP_404_NOT_FOUND)
+        except ciclo.TransicionInvalida as error:
+            return Response({'detail': str(error)}, status=status.HTTP_409_CONFLICT)
+        votacion.refresh_from_db()
+        return Response(VotacionSerializer(votacion).data)
 
 
 class CategoriaListCreateView(generics.ListCreateAPIView):
@@ -81,6 +148,14 @@ class VotacionDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Votacion.objects.select_related('edicion', 'categoria').all()
     serializer_class = VotacionSerializer
 
+    def perform_destroy(self, instance):
+        # La estructura solo cambia con la edición en BORRADOR.
+        if not instance.edicion.admite_cambios_de_estructura:
+            raise ValidationError('Las votaciones solo se eliminan con la edición en BORRADOR.')
+        if instance.total_votos:
+            raise ValidationError('La votación ya registra votos.')
+        instance.delete()
+
 
 class NormativaListCreateView(generics.ListCreateAPIView):
     permission_classes = [TienePermiso]
@@ -113,6 +188,13 @@ class OpcionDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Opcion.objects.select_related('votacion', 'foto_recurso').all()
     serializer_class = OpcionSerializer
 
+    def perform_destroy(self, instance):
+        if instance.votacion.estado != Votacion.BORRADOR:
+            raise ValidationError('Las opciones solo se eliminan con la votación en BORRADOR.')
+        if instance.votos.exists():
+            raise ValidationError('La opción ya registra votos.')
+        instance.delete()
+
 
 class RecursoMultimediaListCreateView(generics.ListCreateAPIView):
     permission_classes = [TienePermiso]
@@ -129,6 +211,7 @@ def _opcion_publica(opcion):
         'subtitulo': opcion.subtitulo,
         'orden': opcion.orden,
         'es_voto_blanco': opcion.es_voto_blanco,
+        'foto': opcion.foto.url if opcion.foto else None,
     }
 
 
@@ -174,7 +257,8 @@ def categorias_publicas(request):
                 'abierta': votacion.esta_abierta,
                 'fecha_apertura': votacion.fecha_apertura,
                 'fecha_cierre': votacion.fecha_cierre,
-                'mostrar_resultados_en_vivo': votacion.mostrar_resultados_en_vivo,
+                'modo_participacion': votacion.modo_participacion,
+                'numero_ronda': votacion.numero_ronda,
                 'opciones': [_opcion_publica(op) for op in votacion.opciones.order_by('orden', 'nombre')],
             })
         if not edicion and not votaciones:

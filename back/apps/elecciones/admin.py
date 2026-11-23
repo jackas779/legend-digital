@@ -18,10 +18,14 @@ class NormativaInline(admin.TabularInline):
     fields = ('titulo', 'archivo_pdf_url')
 
 
+# El estado nunca se edita a mano (tampoco desde el admin): cambia solo por
+# las transiciones de elecciones.ciclo, que aplican las reglas en cascada.
+
 class VotacionInline(admin.TabularInline):
     model = Votacion
     extra = 0
     fields = ('nombre', 'categoria', 'estado', 'fecha_apertura', 'fecha_cierre')
+    readonly_fields = ('estado',)
 
 
 @admin.register(Edicion)
@@ -30,9 +34,10 @@ class EdicionAdmin(AdminPermisosMixin, admin.ModelAdmin):
     codigo_crear = 'ediciones.crear'
     codigo_editar = 'ediciones.editar'
     codigo_eliminar = 'ediciones.eliminar'
-    list_display = ('nombre', 'anio', 'estado', 'creador', 'fecha_creacion')
+    list_display = ('nombre', 'anio', 'estado', 'fecha_inicio', 'fecha_fin', 'creador')
     list_filter = ('estado', 'anio')
     search_fields = ('nombre',)
+    readonly_fields = ('estado', 'cierre_anticipado', 'motivo_cierre', 'fecha_cierre_real')
     inlines = [VotacionInline]
 
 
@@ -42,7 +47,8 @@ class CategoriaAdmin(AdminPermisosMixin, admin.ModelAdmin):
     codigo_crear = 'categorias.crear'
     codigo_editar = 'categorias.editar'
     codigo_eliminar = 'categorias.eliminar'
-    list_display = ('nombre',)
+    list_display = ('nombre', 'archivada')
+    list_filter = ('archivada',)
     search_fields = ('nombre',)
 
 
@@ -63,6 +69,9 @@ class VotacionAdmin(AdminPermisosMixin, admin.ModelAdmin):
     )
     list_filter = ('estado', 'edicion', 'categoria')
     search_fields = ('nombre',)
+    readonly_fields = (
+        'estado', 'ronda_anterior', 'numero_ronda', 'resultado', 'opcion_ganadora', 'decision_empate',
+    )
     inlines = [OpcionInline, NormativaInline]
 
 

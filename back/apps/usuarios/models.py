@@ -64,7 +64,8 @@ class Usuario(models.Model):
 
 class SessionToken(models.Model):
     usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='sesiones')
-    token_hash = models.CharField(max_length=256, unique=True)
+    # SHA-256 en hexadecimal: 64 caracteres (y un índice único liviano en MySQL).
+    token_hash = models.CharField(max_length=64, unique=True)
     ip_origen = models.CharField(max_length=45)
     fecha_emision = models.DateTimeField(auto_now_add=True)
     fecha_expiracion = models.DateTimeField()

@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+
+{% block title %}Cerrar {{ edicion }} — Gestión{% endblock %}
+
+{% block content %}
+  <p class="crumbs"><a href="{% url 'gestion:edicion_gestionar' edicion.id %}">← {{ edicion }}</a></p>
+
+  <div class="panel-form">
+    <h1>Cerrar anticipadamente</h1>
+    <p class="lead">
+      {{ edicion }} se cerraría sola el <strong>{{ edicion.fecha_fin|date:"j b Y, H:i" }}</strong>.
+      Cerrarla ahora es definitivo: deja de recibir votos y no se puede reabrir.
+    </p>
+
+    <div class="msg warning">
+      <p>Al confirmar:</p>
+      <ul>
+        <li>{{ abiertas|length }} votaci{{ abiertas|length|pluralize:"ón abierta pasa,ones abiertas pasan" }} a <strong>Cerrada</strong> (sus votos se conservan).</li>
+        <li>{{ sin_abrir|length }} votaci{{ sin_abrir|length|pluralize:"ón que nunca se abrió pasa,ones que nunca se abrieron pasan" }} a <strong>Cancelada</strong>.</li>
+        <li>La edición queda <strong>en escrutinio</strong> hasta que se escruten sus votaciones.</li>
+      </ul>
+    </div>
+
+    <form method="post" novalidate>
+      {% csrf_token %}
+      <div class="campo">
+        <label for="{{ form.motivo.id_for_label }}">{{ form.motivo.label }}</label>
+        {{ form.motivo }}
+        <p class="ayuda">{{ form.motivo.help_text }}</p>
+        {% for error in form.motivo.errors %}<p class="errors">{{ error }}</p>{% endfor %}
+      </div>
+      <div class="acciones-form">
+        <button type="submit" class="peligro">Cerrar la edición ahora</button>
+        <a href="{% url 'gestion:edicion_gestionar' edicion.id %}" class="button ghost">Cancelar</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

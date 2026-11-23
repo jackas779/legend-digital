@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block title %}Verificación — Sistema de Votación{% endblock %}
+
+{% block content %}
+  <div class="pagina-head">
+    <div>
+      <h1>Verificación por edición</h1>
+      <p class="lead">El auditor observa y verifica: confirma que todo está en orden o registra
+        las discrepancias que encuentre. No cambia estados ni bloquea el proceso.</p>
+    </div>
+  </div>
+
+  <div class="grid">
+    {% for edicion in ediciones %}
+      <article class="card tarjeta">
+        <div class="tarjeta-titulo">
+          <strong><a class="enlace-titulo" href="{% url 'auditoria_edicion' edicion.id %}">{{ edicion }}</a></strong>
+          <span class="badge {{ edicion.estado|lower }}">{{ edicion.get_estado_display }}</span>
+        </div>
+        {% if edicion.estado == 'FINALIZADA' and edicion.abiertas %}
+          <span class="badge alerta">Finalizada con discrepancias pendientes</span>
+        {% endif %}
+        <div class="cifras">
+          <div><b class="cifra">{{ edicion.abiertas }}</b><span>abierta{{ edicion.abiertas|pluralize }}</span></div>
+          <div><b class="cifra">{{ edicion.total_discrepancias }}</b><span>discrepancia{{ edicion.total_discrepancias|pluralize }}</span></div>
+          <div><b class="cifra">{{ edicion.confirmaciones_total }}</b><span>confirmaci{{ edicion.confirmaciones_total|pluralize:"ón,ones" }}</span></div>
+        </div>
+        <div class="acciones">
+          <a class="button mini" href="{% url 'auditoria_edicion' edicion.id %}">Verificar</a>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+
+  {% if not ediciones %}
+    <p class="empty">Todavía no hay ediciones programadas para verificar.</p>
+  {% endif %}
+{% endblock %}

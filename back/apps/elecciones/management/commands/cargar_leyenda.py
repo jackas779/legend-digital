@@ -1,11 +1,14 @@
 """Carga el escenario principal del demo: el Festival de la Leyenda Vallenata.
 
 - 2026 (ACTIVA): la edición protagonista, con cinco categorías abiertas.
-- 2025 (FINALIZADA): edición anterior con resultados, para ver el historial.
-- 2027 (PROGRAMADA): próxima edición, aún sin candidatos inscritos.
+- 2025 (EN ESCRUTINIO → FINALIZADA): edición anterior. Sus votaciones quedan
+  CERRADAS para que la simulación les cargue votos; ``preparar`` las
+  escruta después y la edición pasa sola a FINALIZADA, como en la vida real.
+- 2027 (PROGRAMADA): próxima edición con sus precandidatos; se programa
+  con la validación real de ``elecciones.ciclo``.
 
 Cada votación lleva su casilla de voto en blanco. Es idempotente: reconoce
-lo que ya existe y no lo duplica.
+lo que ya existe y no lo duplica ni le cambia el estado.
 """
 
 from datetime import datetime, timedelta
@@ -13,6 +16,7 @@ from datetime import datetime, timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from back.apps.elecciones import ciclo
 from back.apps.elecciones.models import Categoria, Edicion, Opcion, Votacion
 
 NOMBRE_FESTIVAL = 'Festival de la Leyenda Vallenata'
@@ -84,7 +88,7 @@ EDICIONES = [
     },
     {
         'anio': 2025,
-        'estado': 'FINALIZADA',
+        'estado': 'CERRANDO',
         'votaciones': [
             {
                 'categoria': 'Rey Vallenato',
@@ -122,37 +126,71 @@ EDICIONES = [
         'estado': 'PROGRAMADA',
         'votaciones': [
             {
+                # Preselección abierta al público: los 2 primeros pasan a la
+                # gran final, que solo votan los inscritos.
                 'categoria': 'Rey Vallenato',
-                'nombre': 'Rey Vallenato 2027',
-                'descripcion': 'Los candidatos se anunciarán al cierre de inscripciones.',
-                'opciones': [],
+                'nombre': 'Preselección Rey Vallenato 2027',
+                'descripcion': 'Vota quién entra a la gran final. Abierta a todo el público.',
+                'regla': Votacion.CLASIFICAN_N,
+                'clasifican': 2,
+                'dias': 2,
+                'opciones': [
+                    (1, 'Camilo Molina Daza', 'Acordeonero de Valledupar'),
+                    (2, 'Rubén Lanao Ariza', 'Acordeonero de Patillal'),
+                    (3, 'Hugo Carlos Granados', 'Acordeonero de Mariangola'),
+                ],
+                'ronda': {
+                    'nombre': 'Gran final Rey Vallenato 2027',
+                    'descripcion': 'Los 2 finalistas de la preselección. Solo para inscritos.',
+                    'modo': Votacion.INSCRITOS,
+                },
             },
             {
                 'categoria': 'Canción Inédita',
                 'nombre': 'Canción Inédita 2027',
-                'descripcion': 'Recepción de canciones abierta hasta febrero.',
-                'opciones': [],
+                'descripcion': 'Canciones preseleccionadas por el jurado.',
+                'opciones': [
+                    (1, 'Luna sobre el Guatapurí', 'Autor: Mario Zuleta'),
+                    (2, 'El Último Juglar', 'Autora: Rosa Maestre'),
+                ],
             },
         ],
     },
 ]
 
 
+def _periodo(anio, estado, ahora):
+    """Periodo de la edición: en curso para la ACTIVA, finales de abril para el resto."""
+    if estado == 'ACTIVA':
+        return ahora - timedelta(hours=1), ahora + timedelta(days=30)
+    # El festival se celebra a finales de abril en Valledupar.
+    inicio = timezone.make_aware(datetime(anio, 4, 26, 8, 0))
+    return inicio, inicio + timedelta(days=5)
+
+
 def _fechas(anio, estado, indice, ahora):
-    """Fechas de apertura y cierre coherentes con el estado de la edición."""
+    """Fechas de apertura y cierre dentro del periodo de la edición."""
+    inicio, fin = _periodo(anio, estado, ahora)
     if estado == 'ACTIVA':
         # Aperturas escalonadas recientes: la edición en curso más reciente
         # encabeza la pantalla de inicio.
-        return ahora - timedelta(minutes=30 - indice * 5), ahora + timedelta(days=30)
-    # El festival se celebra a finales de abril en Valledupar.
-    apertura = timezone.make_aware(datetime(anio, 4, 26, 9, 0) + timedelta(hours=indice))
+        return ahora - timedelta(minutes=30 - indice * 5), fin
+    apertura = inicio + timedelta(hours=1 + indice)
     return apertura, apertura + timedelta(days=4)
+
+
+# Estado de cada votación según el estado con que se siembra su edición.
+ESTADO_VOTACION = {
+    'ACTIVA': Votacion.ABIERTA,
+    'CERRANDO': Votacion.CERRADA,
+    'PROGRAMADA': Votacion.BORRADOR,  # Pasa a LISTA al programar la edición.
+}
 
 
 class Command(BaseCommand):
     help = (
         'Crea el Festival de la Leyenda Vallenata: edición 2026 activa, 2025 '
-        'finalizada y 2027 programada, con categorías, votaciones y opciones.'
+        'en escrutinio y 2027 programada, con categorías, votaciones y opciones.'
     )
 
     def handle(self, *args, **options):
@@ -167,17 +205,23 @@ class Command(BaseCommand):
 
         for datos_edicion in EDICIONES:
             estado = datos_edicion['estado']
+            inicio, fin = _periodo(datos_edicion['anio'], estado, ahora)
+            # La de 2027 nace en BORRADOR y se programa con la validación real.
+            estado_siembra = Edicion.BORRADOR if estado == Edicion.PROGRAMADA else estado
             edicion, creada = Edicion.objects.get_or_create(
                 nombre=NOMBRE_FESTIVAL,
                 anio=datos_edicion['anio'],
-                defaults={'estado': estado},
+                defaults={'estado': estado_siembra, 'fecha_inicio': inicio, 'fecha_fin': fin},
             )
-            if not creada and edicion.estado != estado:
-                edicion.estado = estado
-                edicion.save(update_fields=['estado'])
+            if not creada:
+                # Ya existe: su estado lo lleva el ciclo de vida, no la semilla.
+                self.stdout.write(f'  {edicion} ({edicion.get_estado_display()}): ya existía')
+                continue
 
             for indice, datos in enumerate(datos_edicion['votaciones']):
                 apertura, cierre = _fechas(edicion.anio, estado, indice, ahora)
+                if 'dias' in datos:
+                    cierre = apertura + timedelta(days=datos['dias'])
                 votacion, _ = Votacion.objects.get_or_create(
                     edicion=edicion,
                     categoria=categorias[datos['categoria']],
@@ -186,10 +230,28 @@ class Command(BaseCommand):
                         'descripcion': datos['descripcion'],
                         'fecha_apertura': apertura,
                         'fecha_cierre': cierre,
-                        'estado': estado,
-                        'mostrar_resultados_en_vivo': True,
+                        'estado': ESTADO_VOTACION[estado],
+                        'regla_resultado': datos.get('regla', Votacion.MAYORIA_SIMPLE),
+                        'clasifican': datos.get('clasifican', 2),
                     },
                 )
+                ronda = datos.get('ronda')
+                if ronda:
+                    # Ronda siguiente: vacía, recibe a los clasificados al escrutar.
+                    Votacion.objects.get_or_create(
+                        ronda_anterior=votacion,
+                        defaults={
+                            'edicion': edicion,
+                            'categoria': votacion.categoria,
+                            'nombre': ronda['nombre'],
+                            'descripcion': ronda['descripcion'],
+                            'fecha_apertura': cierre + timedelta(hours=2),
+                            'fecha_cierre': fin - timedelta(hours=1),
+                            'modo_participacion': ronda['modo'],
+                            'numero_ronda': votacion.numero_ronda + 1,
+                            'estado': Votacion.BORRADOR,
+                        },
+                    )
 
                 for orden, nombre_op, subtitulo in datos['opciones']:
                     Opcion.objects.get_or_create(
@@ -209,6 +271,12 @@ class Command(BaseCommand):
                             'subtitulo': 'No favorece a ninguna candidatura.',
                         },
                     )
+
+            if estado == Edicion.PROGRAMADA:
+                ciclo.programar(edicion)
+            elif estado == Edicion.CERRANDO:
+                edicion.fecha_cierre_real = fin
+                edicion.save(update_fields=['fecha_cierre_real'])
 
             self.stdout.write(
                 f'  {edicion} ({edicion.get_estado_display()}): '

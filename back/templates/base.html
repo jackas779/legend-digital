@@ -196,6 +196,19 @@
     .badge.programada { color: #1e4d8c; background: #dfeafa; }
     .badge.borrador { color: var(--muted); background: #efeadf; }
     .badge.votada { color: #6b4700; background: var(--sun-soft); }
+    /* Estados propios de la votación y del cierre de la edición. */
+    .badge.lista { color: #1e4d8c; background: #dfeafa; }
+    .badge.abierta { color: #0b5d3a; background: #d6f0e1; }
+    .badge.cerrando, .badge.cerrada { color: #6b4700; background: var(--sun-soft); }
+    .badge.escrutada { color: #4b5563; background: #e7e5e0; }
+    .badge.cancelada { color: #6b7280; background: #f1efe9; text-decoration: line-through; }
+    .badge.alerta { color: #8c1d18; background: #fdecea; }
+    .badge.resuelta { color: #0b5d3a; background: #d6f0e1; }
+    .badge.descartada, .badge.archivada { color: #4b5563; background: #e7e5e0; }
+    .ciclo-aviso { margin: 1rem 0 1.5rem; padding: .9rem 1.1rem; border-radius: 12px; background: #f6f3ec; font-size: .93rem; }
+    .ciclo-aviso p { margin: .2rem 0; }
+    .ciclo-aviso .ok { color: #0b5d3a; font-weight: 600; }
+    .lista-pendientes { margin: .3rem 0 0; padding-left: 1.2rem; color: var(--warn); }
 
     /* ====== Mensajes ====== */
     .messages { list-style: none; padding: 0; margin: 0 0 1.5rem; }
@@ -328,6 +341,51 @@
     .option .textos { min-width: 0; }
     .option strong { display: block; font-size: 1.05rem; line-height: 1.3; }
     .option .sub { color: var(--muted); font-size: .9rem; }
+    /* Foto del candidato (o sus iniciales si no tiene). */
+    .foto-opcion {
+      flex: none;
+      width: 4.5rem; height: 4.5rem;
+      border-radius: 14px;
+      object-fit: cover;
+      background: var(--accent-soft);
+      color: var(--accent-dark);
+      display: grid; place-items: center;
+      font-family: var(--titulos); font-weight: 800; font-size: 1.4rem;
+    }
+    .foto-opcion.mini { width: 2.4rem; height: 2.4rem; border-radius: 8px; font-size: .9rem; }
+    .foto-opcion.grande { width: 6rem; height: 6rem; font-size: 2rem; }
+    .option .num-chico { color: var(--muted); font-size: .8rem; font-weight: 600; }
+    .option.blanco .foto-opcion { background: #efeadf; color: var(--muted); }
+    .eleccion-dialogo { display: flex; align-items: center; gap: .9rem; }
+    /* Participación (lo único público mientras la votación está abierta). */
+    .participacion { margin: 0 0 1.25rem; font-size: .92rem; color: var(--muted); }
+    .participacion .pista { margin-top: .35rem; background: #e7e1d3; }
+    .cuenta-regresiva { font-weight: 600; color: var(--accent-dark); }
+    .normativas details { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: .6rem .9rem; margin-bottom: .5rem; }
+    .normativas summary { cursor: pointer; font-weight: 600; }
+    .normativas .texto { white-space: pre-line; font-size: .92rem; margin: .5rem 0 0; }
+    /* Gestión: ciclo de vida, etiquetas y resultados por ronda. */
+    .pasos-ciclo { display: flex; flex-wrap: wrap; gap: .35rem; list-style: none; padding: 0; margin: 0 0 1rem; font-size: .85rem; }
+    .pasos-ciclo li { display: flex; align-items: center; gap: .35rem; padding: .3rem .7rem; border-radius: 999px; background: #efeadf; color: var(--muted); }
+    .pasos-ciclo b { font-size: .75rem; }
+    .pasos-ciclo .hecho { background: #d6f0e1; color: #0b5d3a; }
+    .pasos-ciclo .actual { background: var(--accent); color: #fff; font-weight: 600; }
+    .etiquetas { display: flex; flex-wrap: wrap; gap: .3rem; margin: .2rem 0; }
+    .chip { font-size: .75rem; padding: .15rem .55rem; border-radius: 999px; background: #efeadf; color: var(--muted); }
+    .ronda-derivada { border-left: 4px solid var(--sun); }
+    .resultado-voto { margin: .3rem 0; font-size: .9rem; }
+    .badge.pasa { color: #0b5d3a; background: #d6f0e1; }
+    .chip-ok { color: #0b5d3a; background: #d6f0e1; }
+    .chip-alerta { color: #8c1d18; background: #fdecea; }
+    .dos-columnas { display: grid; gap: 1.25rem; grid-template-columns: minmax(0, 1fr); align-items: start; }
+    @media (min-width: 900px) { .dos-columnas { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } }
+    .dos-columnas .card h2 { margin-top: 0; }
+    .dos-columnas textarea { width: 100%; min-height: 9rem; font-family: inherit; }
+    .lista-limpia { list-style: none; padding: 0; margin: .4rem 0 0; display: grid; gap: .45rem; }
+    .lista-limpia li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .4rem; }
+    .informe-inscripcion { margin-top: 1rem; padding-top: .8rem; border-top: 1px solid var(--line); }
+    .informe-inscripcion .chip { margin-right: .3rem; }
+    #buscar-inscrito { max-width: 240px; }
     .barra-voto {
       position: sticky;
       bottom: .75rem;
@@ -670,5 +728,30 @@
   </main>
 
   <footer class="pie-sitio">El voto es secreto: tu comprobante nunca revela la opción elegida.</footer>
+
+  <script>
+    // Cuenta regresiva: <span data-hasta="ISO" data-prefijo="Cierra en">.
+    // Sin JavaScript queda la fecha escrita en el propio elemento.
+    (function () {
+      const elementos = document.querySelectorAll('[data-hasta]');
+      if (!elementos.length) return;
+      function texto(ms) {
+        const min = Math.floor(ms / 60000);
+        const d = Math.floor(min / 1440), h = Math.floor((min % 1440) / 60), m = min % 60;
+        if (d) return d + ' d ' + h + ' h';
+        if (h) return h + ' h ' + m + ' min';
+        return m + ' min';
+      }
+      function actualizar() {
+        const ahora = Date.now();
+        elementos.forEach(function (el) {
+          const falta = new Date(el.dataset.hasta).getTime() - ahora;
+          el.textContent = falta > 0 ? (el.dataset.prefijo + ' ' + texto(falta)) : el.dataset.final;
+        });
+      }
+      actualizar();
+      setInterval(actualizar, 30000);
+    })();
+  </script>
 </body>
 </html>

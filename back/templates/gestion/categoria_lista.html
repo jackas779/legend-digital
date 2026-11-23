@@ -15,17 +15,29 @@
   <div class="grid">
     {% for categoria in categorias %}
       <article class="card tarjeta">
-        <strong>{{ categoria.nombre }}</strong>
+        <div class="tarjeta-titulo">
+          <strong>{{ categoria.nombre }}</strong>
+          {% if categoria.archivada %}<span class="badge archivada">Archivada</span>{% endif %}
+        </div>
         {% if categoria.descripcion %}
           <div class="meta">{{ categoria.descripcion }}</div>
         {% endif %}
         <div class="cifras">
-          <div><b class="cifra">{{ categoria.num_votaciones }}</b><span>votaci{{ categoria.num_votaciones|pluralize:"ón,ones" }} la usa{{ categoria.num_votaciones|pluralize:",n" }}</span></div>
+          <div><b class="cifra">{{ categoria.num_ediciones }}</b><span>edici{{ categoria.num_ediciones|pluralize:"ón,ones" }}</span></div>
+          <div><b class="cifra">{{ categoria.num_votaciones }}</b><span>votaci{{ categoria.num_votaciones|pluralize:"ón,ones" }}</span></div>
         </div>
         <div class="acciones">
           <a class="button ghost mini" href="{% url 'gestion:votaciones' %}?categoria={{ categoria.id }}">Ver votaciones</a>
-          <a class="button ghost mini" href="{% url 'gestion:categoria_editar' categoria.id %}">Editar</a>
-          <a class="button ghost peligro mini" href="{% url 'gestion:categoria_eliminar' categoria.id %}">Eliminar</a>
+          {% if puede_editar %}
+            <a class="button ghost mini" href="{% url 'gestion:categoria_editar' categoria.id %}">Editar</a>
+            <form method="post" action="{% url 'gestion:categoria_archivar' categoria.id %}">
+              {% csrf_token %}
+              <button type="submit" class="ghost mini">{% if categoria.archivada %}Reactivar{% else %}Archivar{% endif %}</button>
+            </form>
+          {% endif %}
+          {% if not categoria.num_votaciones %}
+            <a class="button ghost peligro mini" href="{% url 'gestion:categoria_eliminar' categoria.id %}">Eliminar</a>
+          {% endif %}
         </div>
       </article>
     {% endfor %}
